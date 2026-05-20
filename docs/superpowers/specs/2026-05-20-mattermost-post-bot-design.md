@@ -29,7 +29,7 @@ The reference manages bot account creation and token minting. This project diffe
 - No creation, deletion, disabling, or editing of Mattermost bot accounts.
 - No token minting or token revocation through Mattermost admin APIs.
 - No web UI in the MVP.
-- No scheduled posts, drafts, media uploads, previews, or approvals for individual posts in the MVP.
+- No scheduled posts, media uploads, previews, draft editing, or approvals for individual posts in the MVP.
 - No free-form `team/channel-name` input in the first stage; users provide a Mattermost channel link.
 
 ## Configuration
@@ -93,24 +93,79 @@ Rules:
 
 Users can list and remove only their own added bots.
 
-## Posting Flow
+## Draft Preparation Flow
 
-Users publish with:
+Users prepare a post in a direct message with the manager bot before choosing where to send it:
 
 ```text
-!post --bot <alias> --channel <mattermost-channel-link> "message"
+!draft
 ```
 
 The service:
 
 1. Checks that the caller is approved and not blocked.
-2. Loads the caller's bot by alias.
-3. Decrypts the bot token in memory.
-4. Parses the Mattermost channel link.
-5. Resolves the channel using the selected bot token.
-6. Posts the message using `POST /api/v4/posts` with the selected bot token.
-7. Records a post audit entry with caller, bot, target channel, status, and Mattermost post id when available.
-8. Replies to the caller through the manager bot.
+2. Starts a pending draft capture session for the caller.
+3. Replies with instructions to send the post body as the next normal direct message.
+4. Stores the next non-command direct message from that caller as a draft.
+5. Replies with the draft id and the send command format.
+
+Example:
+
+```text
+!draft
+```
+
+The manager bot replies:
+
+```text
+Send the post body as your next direct message. Use `!draft cancel` to cancel.
+```
+
+The user sends a normal message:
+
+```text
+Release notes
+
+- Fixed channel sync
+- Added audit log
+```
+
+The manager bot stores the text and replies:
+
+```text
+Draft #42 saved. Send it with:
+!send 42 --bot <alias> --channel <mattermost-channel-link>
+```
+
+Draft capture rules:
+
+- Draft capture is accepted only in a direct message with the manager bot.
+- Only non-command messages are captured as draft bodies. Messages beginning with `!` are processed as commands and do not become draft bodies.
+- A user may have at most one active draft capture session.
+- `!draft cancel` cancels the active capture session.
+- Pending draft capture expires after 30 minutes.
+- A saved draft belongs only to the user who created it.
+
+## Send Flow
+
+Users publish a saved draft with:
+
+```text
+!send <draft_id> --bot <alias> --channel <mattermost-channel-link>
+```
+
+The service:
+
+1. Checks that the caller is approved and not blocked.
+2. Loads the caller's draft by id and checks that it is still in `draft` status.
+3. Loads the caller's bot by alias.
+4. Decrypts the bot token in memory.
+5. Parses the Mattermost channel link.
+6. Resolves the channel using the selected bot token.
+7. Posts the draft body using `POST /api/v4/posts` with the selected bot token.
+8. Marks the draft as `sent`.
+9. Records a post audit entry with caller, draft, bot, target channel, status, and Mattermost post id when available.
+10. Replies to the caller through the manager bot.
 
 In the first stage, channel input must be a Mattermost channel link such as:
 
@@ -130,7 +185,12 @@ User commands:
 - `!bot add <alias> <token>`: add a bot token to the caller's bot list; DM only.
 - `!bot list`: list the caller's active bots without showing token values.
 - `!bot remove <alias>`: remove a bot from the caller's list.
-- `!post --bot <alias> --channel <link> "message"`: publish to a channel from the selected bot.
+- `!draft`: start capturing the next normal DM as a draft body.
+- `!draft cancel`: cancel active draft capture.
+- `!draft list`: list the caller's saved drafts.
+- `!draft show <draft_id>`: show a saved draft body.
+- `!draft delete <draft_id>`: soft-delete a saved draft.
+- `!send <draft_id> --bot <alias> --channel <link>`: publish a saved draft to a channel from the selected bot.
 
 Admin commands:
 
@@ -176,11 +236,36 @@ Uniqueness:
 
 - `(owner_user_id, alias)` must be unique for non-deleted records.
 
+### `draft_capture`
+
+- `owner_user_id`: Mattermost user id, primary key.
+- `created_at`.
+- `expires_at`.
+
+This table tracks users who ran `!draft` and are expected to send a normal DM containing the post body.
+
+### `post_draft`
+
+- `id`: generated primary key.
+- `owner_user_id`: references `app_user.user_id`.
+- `message`: draft body.
+- `message_sha256`: hash of the message body.
+- `status`: `draft`, `sent`, or `deleted`.
+- `created_at`.
+- `updated_at`.
+- `sent_at`.
+- `sent_by_user_bot_id`.
+- `sent_channel_id`.
+- `mattermost_post_id`.
+
+Saved draft text is intentionally stored in the MVP so users can review drafts with `!draft show`. Deleted drafts are soft-deleted by setting `status = 'deleted'`.
+
 ### `post_audit_log`
 
 - `id`: generated primary key.
 - `caller_user_id`.
 - `caller_username`.
+- `draft_id`.
 - `user_bot_id`.
 - `bot_user_id`.
 - `bot_username`.
@@ -216,6 +301,7 @@ Needed Mattermost API operations:
 - Never log plaintext tokens.
 - Never echo plaintext tokens back to users.
 - Reject `!bot add` outside direct messages.
+- Reject `!draft` capture outside direct messages.
 - Redact command text in logs for commands that may contain secrets.
 - Encrypt bot tokens at rest using `TOKEN_ENCRYPTION_KEY`.
 - Keep decrypted tokens only in memory for a single operation.
@@ -231,6 +317,9 @@ User-facing errors should be specific but not leak secrets:
 - Pending user: explain that admin approval is required.
 - Blocked user: explain that access is blocked.
 - Unknown bot alias: ask them to use `!bot list`.
+- No active draft capture: explain that the user should run `!draft`.
+- Unknown draft id: ask them to use `!draft list`.
+- Already sent or deleted draft: explain that the draft cannot be sent.
 - Invalid bot token: say validation failed, without echoing the token.
 - Invalid channel link: show the expected link form.
 - Channel not visible to selected bot: explain that the bot may not be a member of the channel or lacks access.
@@ -244,11 +333,12 @@ Unit tests:
 
 - Command parsing and dispatch.
 - Registration and admin command authorization.
-- User status gates for bot and post commands.
+- User status gates for bot, draft, and send commands.
 - Bot alias uniqueness and soft deletion.
 - Token validation and encryption boundaries.
+- Draft capture, cancellation, expiry, listing, showing, deletion, and ownership isolation.
 - Channel link parsing.
-- Post command success and failure paths.
+- Send command success and failure paths.
 - Redaction behavior for secret-bearing commands.
 
 HTTP tests:
@@ -270,16 +360,17 @@ Manual MVP test against `https://mm.internal/i`:
 3. Send `!register` from a non-admin user.
 4. Approve the user from an admin account.
 5. Add an existing bot token in a DM.
-6. Post to a channel by passing a Mattermost channel link.
-7. Confirm the message appears from the selected bot account.
-8. Block the user and confirm posting is denied.
+6. Send `!draft` in a DM, then send the post body as a normal DM.
+7. Send the saved draft to a channel by passing a Mattermost channel link.
+8. Confirm the message appears from the selected bot account.
+9. Block the user and confirm posting is denied.
 
 ## Future Extensions
 
 The data model should leave room for:
 
 - Scheduled posts.
-- Drafts.
+- Draft editing.
 - Message previews.
 - Attachments and file uploads.
 - Per-channel permissions inside the service.
