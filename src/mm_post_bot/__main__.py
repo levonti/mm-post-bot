@@ -26,8 +26,7 @@ async def main() -> None:
             verify_ssl=settings.mm_verify_ssl,
         )
         manager_me = await manager_mm.get_me()
-        manager_user_id = str(manager_me["id"])
-        manager_username = str(manager_me["username"])
+        manager_user_id, manager_username = _manager_identity(manager_me)
 
         router = MessageRouter(
             manager_user_id=manager_user_id,
@@ -58,11 +57,18 @@ async def _serve_events(
     context_factory: CommandContextFactory,
 ) -> None:
     tasks: set[asyncio.Task[None]] = set()
+    semaphore = asyncio.Semaphore(settings.max_event_tasks)
 
     try:
         async for event in listen_events(settings):
+            await semaphore.acquire()
             task = asyncio.create_task(
-                _handle_event_logged(event, router=router, context_factory=context_factory)
+                _handle_event_releasing(
+                    event,
+                    router=router,
+                    context_factory=context_factory,
+                    semaphore=semaphore,
+                )
             )
             tasks.add(task)
             task.add_done_callback(tasks.discard)
@@ -75,6 +81,19 @@ async def _serve_events(
     else:
         if tasks:
             await asyncio.gather(*tasks)
+
+
+async def _handle_event_releasing(
+    event: Mapping[str, Any],
+    *,
+    router: MessageRouter,
+    context_factory: CommandContextFactory,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    try:
+        await _handle_event_logged(event, router=router, context_factory=context_factory)
+    finally:
+        semaphore.release()
 
 
 async def _handle_event_logged(
@@ -108,6 +127,22 @@ async def _close_manager(manager_mm: MattermostClient | None) -> None:
 
 def _close_db(conn: DbConn) -> None:
     conn.close()
+
+
+def _manager_identity(manager_me: Mapping[str, Any]) -> tuple[str, str]:
+    if manager_me.get("is_bot") is not True:
+        raise RuntimeError("MM_BOT_TOKEN must belong to a Mattermost bot account.")
+
+    manager_user_id = _required_string(manager_me, "id")
+    manager_username = _required_string(manager_me, "username")
+    return manager_user_id, manager_username
+
+
+def _required_string(payload: Mapping[str, Any], field: str) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(f"Mattermost /users/me response is missing {field}.")
+    return value
 
 
 def run() -> None:

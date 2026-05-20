@@ -34,7 +34,7 @@ class FakeMattermostClient:
         FakeMattermostClient.instances.append(self)
 
     async def get_me(self) -> dict[str, Any]:
-        return {"id": "manager-id", "username": "postbot"}
+        return {"id": "manager-id", "username": "postbot", "is_bot": True}
 
     async def aclose(self) -> None:
         self.closed = True
@@ -141,6 +141,61 @@ async def test_event_loop_spawns_handlers_without_blocking_iteration(monkeypatch
     )
 
     assert handled == [1, 2]
+
+
+async def test_event_loop_limits_handler_concurrency(monkeypatch):
+    started = 0
+    running = 0
+    max_running = 0
+    release_handlers = asyncio.Event()
+
+    async def fake_listen_events(settings: Settings) -> AsyncIterator[dict[str, Any]]:
+        for idx in range(5):
+            yield {"id": idx}
+
+    async def fake_handle_event(
+        event: Mapping[str, Any],
+        *,
+        router: MessageRouter,
+        context_factory: CommandContextFactory,
+    ) -> None:
+        nonlocal started, running, max_running
+        started += 1
+        running += 1
+        max_running = max(max_running, running)
+        if started == 2:
+            release_handlers.set()
+        await release_handlers.wait()
+        running -= 1
+
+    settings = _settings().model_copy(update={"max_event_tasks": 2})
+    monkeypatch.setattr(entrypoint, "listen_events", fake_listen_events)
+    monkeypatch.setattr(entrypoint, "handle_event", fake_handle_event)
+
+    await asyncio.wait_for(
+        entrypoint._serve_events(
+            settings,
+            router=cast(MessageRouter, object()),
+            context_factory=cast(CommandContextFactory, object()),
+        ),
+        timeout=1,
+    )
+
+    assert started == 5
+    assert max_running == 2
+
+
+def test_manager_identity_requires_bot_account():
+    assert entrypoint._manager_identity(
+        {"id": "manager-id", "username": "postbot", "is_bot": True}
+    ) == ("manager-id", "postbot")
+
+    try:
+        entrypoint._manager_identity({"id": "human-id", "username": "alice", "is_bot": False})
+    except RuntimeError as exc:
+        assert "bot account" in str(exc)
+    else:
+        raise AssertionError("human manager token should be rejected")
 
 
 def test_module_execution_calls_run(monkeypatch):

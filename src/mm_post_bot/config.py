@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     token_encryption_key: str = Field(..., min_length=1, description="Fernet key")
     mm_verify_ssl: bool = Field(default=True)
     log_level: str = Field(default="INFO")
+    max_event_tasks: int = Field(default=32, ge=1)
 
     @property
     def admin_usernames(self) -> list[str]:

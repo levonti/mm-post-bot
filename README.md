@@ -50,9 +50,10 @@ cp .env.example .env
 | `DB_URL` | yes | PostgreSQL DSN для локального запуска через `uv`. |
 | `TOKEN_ENCRYPTION_KEY` | yes | Fernet key для шифрования user bot tokens. |
 | `LOG_LEVEL` | no | Уровень логирования, по умолчанию `INFO`. |
+| `MAX_EVENT_TASKS` | no | Максимум одновременно обрабатываемых Mattermost events, по умолчанию `32`. |
 | `POSTGRES_USER` | Docker | Пользователь PostgreSQL для compose. |
 | `POSTGRES_DB` | Docker | База PostgreSQL для compose. |
-| `POSTGRES_PASSWORD` | Docker | Пароль PostgreSQL для compose. |
+| `POSTGRES_PASSWORD` | Docker | Пароль PostgreSQL для compose; должен быть задан явно. |
 
 Сгенерировать ключ:
 
@@ -84,7 +85,8 @@ docker compose logs -f mm-post-bot
 ```
 
 Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `DB_URL` внутри контейнера
-формируется из `POSTGRES_USER`, `POSTGRES_PASSWORD` и `POSTGRES_DB`.
+формируется из `POSTGRES_USER`, `POSTGRES_PASSWORD` и `POSTGRES_DB`; compose не задает
+пароль PostgreSQL по умолчанию.
 
 ## Команды
 
@@ -174,6 +176,8 @@ posting bot account.
 
 - Не используйте system admin PAT: боту нужен только manager bot token и токены уже созданных
   posting bot accounts.
+- `MM_BOT_TOKEN` должен принадлежать Mattermost bot account; обычный user token будет
+  отклонен при старте.
 - `TOKEN_ENCRYPTION_KEY` должен храниться как secret. Потеря ключа сделает сохраненные токены
   нерасшифровываемыми.
 - Токен, добавленный через `!bot add`, доступен приложению для отправки сообщений от имени
