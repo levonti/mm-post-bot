@@ -80,7 +80,7 @@ class MattermostClient:
             ),
         )
 
-    async def create_post(self, *, channel_id: str, message: str) -> dict[str, Any]:
+    async def create_post(self, channel_id: str, message: str) -> dict[str, Any]:
         return cast(
             dict[str, Any],
             await self._request(

@@ -41,7 +41,7 @@ async def test_create_post(client):
         return_value=httpx.Response(201, json={"id": "post-id", "channel_id": "channel-id"})
     )
 
-    post = await client.create_post(channel_id="channel-id", message="hello")
+    post = await client.create_post("channel-id", "hello")
     assert post["id"] == "post-id"
     assert json.loads(route.calls.last.request.content) == {
         "channel_id": "channel-id",
