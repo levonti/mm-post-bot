@@ -91,6 +91,7 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 Пользовательские команды:
 
 ```text
+!help
 !register
 !status
 !bot add <alias> <token>

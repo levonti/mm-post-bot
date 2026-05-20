@@ -1,5 +1,7 @@
 import asyncio
+import runpy
 from collections.abc import AsyncIterator, Mapping
+from pathlib import Path
 from typing import Any, ClassVar, cast
 
 from mm_post_bot import __main__ as entrypoint
@@ -139,3 +141,13 @@ async def test_event_loop_spawns_handlers_without_blocking_iteration(monkeypatch
     )
 
     assert handled == [1, 2]
+
+
+def test_module_execution_calls_run(monkeypatch):
+    called: list[str] = []
+
+    monkeypatch.setattr("asyncio.run", lambda coro: called.append("run") or coro.close())
+
+    runpy.run_path(str(Path(entrypoint.__file__).resolve()), run_name="__main__")
+
+    assert called == ["run"]

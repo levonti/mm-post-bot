@@ -112,3 +112,7 @@ def _close_db(conn: DbConn) -> None:
 
 def run() -> None:
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()
