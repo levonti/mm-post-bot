@@ -63,6 +63,8 @@ async def block(ctx: CommandContext, args: ParsedArgs) -> str:
     user = _resolve_user(ctx, target)
     if user is None:
         return f"Could not find user {target}."
+    if user.username in ctx.admin_usernames:
+        return "Configured admins cannot be blocked."
 
     blocked = ctx.user_repo.block(user.user_id, blocked_by=ctx.caller_user_id)
     return f"Blocked {blocked.username} ({blocked.user_id})."

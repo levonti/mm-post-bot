@@ -125,6 +125,20 @@ async def test_admin_can_approve_block_and_unblock(ctx: CommandFixture):
     assert ctx.users.get("alice-id").status == "approved"
 
 
+async def test_configured_admins_cannot_be_blocked(ctx: CommandFixture):
+    root_ctx = ctx.make("root-id", "root", admin_usernames={"admin", "root"})
+    await dispatch(root_ctx, "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin", "root"}),
+        "!user block root",
+    )
+
+    assert reply is not None
+    assert "cannot be blocked" in reply.lower()
+    assert ctx.users.get("root-id").status == "approved"
+
+
 async def test_status_reports_unknown_pending_approved_and_blocked(ctx: CommandFixture):
     unknown = await dispatch(ctx.make("alice-id", "alice"), "!status")
     assert unknown is not None
