@@ -47,7 +47,10 @@ class MattermostClient:
         if response.status_code >= 400:
             try:
                 payload = response.json()
-                message = payload.get("message", response.text)
+                if isinstance(payload, dict):
+                    message = str(payload.get("message") or response.text)
+                else:
+                    message = response.text
             except ValueError:
                 payload = None
                 message = response.text

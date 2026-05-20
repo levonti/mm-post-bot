@@ -51,6 +51,18 @@ async def test_create_post(client):
 
 
 @respx.mock
+async def test_create_direct_channel(client):
+    route = respx.post("https://mm.example/api/v4/channels/direct").mock(
+        return_value=httpx.Response(201, json={"id": "dm-channel-id"})
+    )
+
+    channel = await client.create_direct_channel("user-a", "user-b")
+    assert channel["id"] == "dm-channel-id"
+    assert json.loads(route.calls.last.request.content) == ["user-a", "user-b"]
+    await client.aclose()
+
+
+@respx.mock
 async def test_error_surface(client):
     respx.get("https://mm.example/api/v4/users/me").mock(
         return_value=httpx.Response(401, json={"message": "Invalid token"})
@@ -61,6 +73,36 @@ async def test_error_surface(client):
 
     assert exc.value.status == 401
     assert "Invalid token" in str(exc.value)
+    await client.aclose()
+
+
+@respx.mock
+async def test_error_surface_with_non_dict_json(client):
+    respx.get("https://mm.example/api/v4/users/me").mock(
+        return_value=httpx.Response(500, json=["bad"])
+    )
+
+    with pytest.raises(MattermostError) as exc:
+        await client.get_me()
+
+    assert exc.value.status == 500
+    assert "Mattermost API error 500" in str(exc.value)
+    assert exc.value.payload == ["bad"]
+    await client.aclose()
+
+
+@respx.mock
+async def test_error_surface_with_plain_text_body(client):
+    respx.get("https://mm.example/api/v4/users/me").mock(
+        return_value=httpx.Response(502, text="upstream unavailable")
+    )
+
+    with pytest.raises(MattermostError) as exc:
+        await client.get_me()
+
+    assert exc.value.status == 502
+    assert "upstream unavailable" in str(exc.value)
+    assert exc.value.payload is None
     await client.aclose()
 
 
