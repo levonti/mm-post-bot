@@ -39,7 +39,11 @@ async def listen_events(settings: Settings) -> AsyncIterator[dict[str, Any]]:
                 backoff_seconds = 1
 
                 async for raw_message in websocket:
-                    payload = json.loads(cast(str, raw_message))
+                    try:
+                        payload = json.loads(cast(str, raw_message))
+                    except json.JSONDecodeError as exc:
+                        logger.warning("mattermost_ws_malformed_frame_ignored", error=str(exc))
+                        continue
                     if isinstance(payload, dict):
                         yield cast(dict[str, Any], payload)
         except asyncio.CancelledError:

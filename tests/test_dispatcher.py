@@ -1,4 +1,17 @@
-from mm_post_bot.dispatcher import MessageRouter, redact_command_for_log
+from typing import cast
+
+from mm_post_bot.commands import CommandContext, dispatch
+from mm_post_bot.dispatcher import (
+    CommandContextFactory,
+    MessageRouter,
+    handle_event,
+    redact_command_for_log,
+)
+
+
+class _UnusedContextFactory:
+    def from_post(self, post, channel_type):
+        raise AssertionError("context factory should not be called")
 
 
 def test_dm_is_command():
@@ -36,3 +49,22 @@ def test_draft_body_only_in_dm():
 
 def test_redacts_bot_add_token():
     assert redact_command_for_log("!bot add news secret-token") == "!bot add news [REDACTED]"
+
+
+async def test_malformed_post_json_is_ignored():
+    router = MessageRouter(manager_user_id="mgr", manager_username="postbot")
+    event = {"event": "posted", "data": {"post": "{bad", "channel_type": "D"}}
+
+    response = await handle_event(
+        event,
+        router=router,
+        context_factory=cast(CommandContextFactory, _UnusedContextFactory()),
+    )
+
+    assert response is None
+
+
+async def test_dispatch_returns_parse_error_for_malformed_shell_syntax():
+    response = await dispatch(cast(CommandContext, object()), '!help "unterminated')
+
+    assert response == "Could not parse command: No closing quotation"

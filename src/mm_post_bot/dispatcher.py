@@ -140,7 +140,10 @@ async def handle_event(
 def _post_from_event_data(data: Mapping[str, Any]) -> dict[str, Any] | None:
     raw_post = data.get("post")
     if isinstance(raw_post, str):
-        parsed = json.loads(raw_post)
+        try:
+            parsed = json.loads(raw_post)
+        except json.JSONDecodeError:
+            return None
         if not isinstance(parsed, dict):
             return None
         post = dict(parsed)
