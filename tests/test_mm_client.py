@@ -25,9 +25,9 @@ async def test_get_me(client):
 
 @respx.mock
 async def test_get_channel_by_team_and_name(client):
-    route = respx.get(
-        "https://mm.example/api/v4/teams/name/team/channels/name/town-square"
-    ).mock(return_value=httpx.Response(200, json={"id": "channel-id", "name": "town-square"}))
+    route = respx.get("https://mm.example/api/v4/teams/name/team/channels/name/town-square").mock(
+        return_value=httpx.Response(200, json={"id": "channel-id", "name": "town-square"})
+    )
 
     channel = await client.get_channel_by_team_and_name("team", "town-square")
     assert channel["id"] == "channel-id"

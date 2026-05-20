@@ -31,7 +31,7 @@ async def add(ctx: CommandContext, args: ParsedArgs) -> str:
     client = MattermostClient(ctx.mm_rest_base, token, verify_ssl=ctx.mm_verify_ssl)
     try:
         me = await client.get_me()
-    except (MattermostError, httpx.HTTPError, ValueError):
+    except MattermostError, httpx.HTTPError, ValueError:
         return "Could not validate that bot token. Please check it and try again."
     finally:
         await client.aclose()

@@ -22,4 +22,6 @@ def test_parse_channel_link_rejects_other_host():
 
 def test_parse_channel_link_rejects_non_channel_path():
     with pytest.raises(ChannelLinkError):
-        parse_channel_link("https://mm.internal/i/team-name/pl/channel-name", mm_url="https://mm.internal/i")
+        parse_channel_link(
+            "https://mm.internal/i/team-name/pl/channel-name", mm_url="https://mm.internal/i"
+        )

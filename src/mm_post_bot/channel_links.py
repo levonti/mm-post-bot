@@ -25,6 +25,8 @@ def parse_channel_link(link: str, *, mm_url: str) -> ChannelLink:
 
     parts = link_parts[len(base_parts) :]
     if len(parts) != 3 or parts[1] != "channels":
-        raise ChannelLinkError("Expected channel link like https://mm.internal/team/channels/channel")
+        raise ChannelLinkError(
+            "Expected channel link like https://mm.internal/team/channels/channel"
+        )
 
     return ChannelLink(team_name=parts[0], channel_name=parts[2])
