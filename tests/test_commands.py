@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from importlib.util import find_spec
 from typing import Any, cast
 
 import pytest
@@ -20,6 +21,34 @@ class FakeMM:
         return {"id": "post-id", "channel_id": channel_id, "message": message}
 
 
+class FakeTokenMM:
+    def __init__(
+        self,
+        rest_base: str,
+        token: str,
+        *,
+        timeout: float = 15.0,
+        verify_ssl: bool = True,
+    ) -> None:
+        self.rest_base = rest_base
+        self.token = token
+        self.timeout = timeout
+        self.verify_ssl = verify_ssl
+
+    async def get_me(self) -> dict[str, Any]:
+        try:
+            return TOKEN_IDENTITIES[self.token]
+        except KeyError as exc:
+            raise AssertionError(f"unexpected token validation for {self.token}") from exc
+
+    async def aclose(self) -> None:
+        pass
+
+
+TOKEN_IDENTITIES: dict[str, dict[str, Any]] = {}
+FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+
+
 @dataclass(frozen=True, slots=True)
 class CommandFixture:
     conn: DbConn
@@ -29,6 +58,7 @@ class CommandFixture:
     post_drafts: PostDraftRepo
     audits: AuditRepo
     manager_mm: FakeMM
+    token_identities: dict[str, dict[str, Any]]
 
     def make(
         self,
@@ -36,12 +66,13 @@ class CommandFixture:
         caller_username: str,
         *,
         admin_usernames: set[str] | frozenset[str] | None = None,
+        channel_type: str | None = "D",
     ) -> CommandContext:
         return CommandContext(
             caller_user_id=caller_user_id,
             caller_username=caller_username,
             channel_id="dm-channel",
-            channel_type="D",
+            channel_type=channel_type,
             user_repo=self.users,
             user_bot_repo=self.user_bots,
             draft_capture_repo=self.draft_captures,
@@ -52,7 +83,7 @@ class CommandFixture:
             admin_usernames=frozenset(admin_usernames or set()),
             mm_rest_base="https://mm.internal/api/v4",
             mm_url="https://mm.internal",
-            token_encryption_key="0" * 44,
+            token_encryption_key=FERNET_KEY,
             mm_verify_ssl=True,
         )
 
@@ -69,8 +100,12 @@ def pg_conn() -> DbConn:
 
 
 @pytest.fixture()
-def ctx(pg_conn: DbConn) -> CommandFixture:
+def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     pg_conn.execute("BEGIN")
+    TOKEN_IDENTITIES.clear()
+    if find_spec("mm_post_bot.commands.bot") is not None:
+        monkeypatch.setattr("mm_post_bot.commands.bot.MattermostClient", FakeTokenMM)
+
     users = UserRepo(pg_conn)
     yield CommandFixture(
         conn=pg_conn,
@@ -80,7 +115,9 @@ def ctx(pg_conn: DbConn) -> CommandFixture:
         post_drafts=PostDraftRepo(pg_conn),
         audits=AuditRepo(pg_conn),
         manager_mm=FakeMM(),
+        token_identities=TOKEN_IDENTITIES,
     )
+    TOKEN_IDENTITIES.clear()
     pg_conn.execute("ROLLBACK")
 
 
@@ -185,3 +222,99 @@ async def test_user_list_requires_admin(ctx: CommandFixture):
 async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
     reply = await dispatch(ctx.make("alice-id", "alice"), "help")
     assert reply == "All commands must start with !."
+
+
+async def test_bot_add_requires_approved_user(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news token")
+    assert reply is not None
+    assert "approval" in reply.lower()
+
+
+async def test_bot_add_requires_dm(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    reply = await dispatch(ctx.make("alice-id", "alice", channel_type="O"), "!bot add news token")
+    assert reply is not None
+    assert "direct message" in reply.lower()
+
+
+async def test_bot_add_validates_and_encrypts_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    assert reply is not None
+    assert "added" in reply.lower()
+    saved = ctx.user_bots.get_by_owner_and_alias("alice-id", "news")
+    assert saved.bot_user_id == "bot-id"
+    assert saved.token_ciphertext != "secret-token"
+
+
+async def test_bot_list_and_remove(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+
+    listed = await dispatch(ctx.make("alice-id", "alice"), "!bot list")
+    assert listed is not None
+    assert "news" in listed
+    assert "secret-token" not in listed
+
+    removed = await dispatch(ctx.make("alice-id", "alice"), "!bot remove news")
+    assert removed is not None
+    assert "removed" in removed.lower()
+
+
+@pytest.mark.parametrize("command", ["!bot add news token", "!bot list", "!bot remove news"])
+async def test_bot_commands_reject_blocked_user(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+
+
+async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["human-token"] = {
+        "id": "human-id",
+        "username": "alice",
+        "is_bot": False,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add personal human-token")
+
+    assert reply is not None
+    assert "bot token" in reply.lower()
+    with pytest.raises(LookupError):
+        ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_add_response_does_not_include_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["super-secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news super-secret-token")
+
+    assert reply is not None
+    assert "super-secret-token" not in reply
