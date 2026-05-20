@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS post_draft (
 );
 CREATE INDEX IF NOT EXISTS idx_post_draft_owner ON post_draft(owner_user_id, status, created_at);
 
+-- draft_id and user_bot_id stay nullable and non-FK so failed or deleted records remain auditable.
 CREATE TABLE IF NOT EXISTS post_audit_log (
     id                    BIGSERIAL PRIMARY KEY,
     caller_user_id         TEXT NOT NULL,

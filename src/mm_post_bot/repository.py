@@ -165,7 +165,8 @@ class UserRepo:
     def upsert_seen_user(self, *, user_id: str, username: str, is_admin: bool) -> AppUser:
         role = "admin" if is_admin else "user"
         status = "approved" if is_admin else "pending"
-        approved_at = _now() if is_admin else None
+        now = _now()
+        approved_at = now if is_admin else None
         row = self._conn.execute(
             """
             INSERT INTO app_user (
@@ -187,7 +188,7 @@ class UserRepo:
                 updated_at = EXCLUDED.updated_at
             RETURNING *
             """,
-            (user_id, username, role, status, approved_at, _now()),
+            (user_id, username, role, status, approved_at, now),
         ).fetchone()
         return _user_from_row(row)
 
@@ -197,7 +198,44 @@ class UserRepo:
             raise LookupError(f"app_user not found: {user_id}")
         return _user_from_row(row)
 
+    def get_by_username(self, username: str) -> AppUser:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM app_user
+            WHERE username = %s
+            ORDER BY updated_at DESC, user_id ASC
+            LIMIT 1
+            """,
+            (username,),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"app_user not found: {username}")
+        return _user_from_row(row)
+
+    def list_by_status(self, status: str | None = None) -> list[AppUser]:
+        if status is None:
+            rows = self._conn.execute(
+                """
+                SELECT *
+                FROM app_user
+                ORDER BY created_at ASC, username ASC
+                """
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                """
+                SELECT *
+                FROM app_user
+                WHERE status = %s
+                ORDER BY created_at ASC, username ASC
+                """,
+                (status,),
+            ).fetchall()
+        return [_user_from_row(row) for row in rows]
+
     def approve(self, user_id: str, *, approved_by: str) -> AppUser:
+        now = _now()
         row = self._conn.execute(
             """
             UPDATE app_user
@@ -210,13 +248,14 @@ class UserRepo:
             WHERE user_id = %s
             RETURNING *
             """,
-            (_now(), approved_by, _now(), user_id),
+            (now, approved_by, now, user_id),
         ).fetchone()
         if row is None:
             raise LookupError(f"app_user not found: {user_id}")
         return _user_from_row(row)
 
     def block(self, user_id: str, *, blocked_by: str) -> AppUser:
+        now = _now()
         row = self._conn.execute(
             """
             UPDATE app_user
@@ -227,7 +266,7 @@ class UserRepo:
             WHERE user_id = %s
             RETURNING *
             """,
-            (_now(), blocked_by, _now(), user_id),
+            (now, blocked_by, now, user_id),
         ).fetchone()
         if row is None:
             raise LookupError(f"app_user not found: {user_id}")
@@ -252,6 +291,7 @@ class UserBotRepo:
         token_ciphertext: str,
         token_fingerprint: str,
     ) -> UserBot:
+        now = _now()
         row = self._conn.execute(
             """
             INSERT INTO user_bot (
@@ -275,7 +315,7 @@ class UserBotRepo:
                 bot_display_name,
                 token_ciphertext,
                 token_fingerprint,
-                _now(),
+                now,
             ),
         ).fetchone()
         return _user_bot_from_row(row)
@@ -294,6 +334,33 @@ class UserBotRepo:
         if row is None:
             raise LookupError(f"user_bot not found: {owner_user_id}/{alias}")
         return _user_bot_from_row(row)
+
+    def list_for_owner(self, owner_user_id: str) -> list[UserBot]:
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM user_bot
+            WHERE owner_user_id = %s
+              AND deleted_at IS NULL
+            ORDER BY created_at ASC, alias ASC
+            """,
+            (owner_user_id,),
+        ).fetchall()
+        return [_user_bot_from_row(row) for row in rows]
+
+    def soft_delete(self, owner_user_id: str, alias: str) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE user_bot
+            SET deleted_at = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND alias = %s
+              AND deleted_at IS NULL
+            """,
+            (now, now, owner_user_id, alias),
+        )
 
 
 class DraftCaptureRepo:
@@ -337,13 +404,14 @@ class PostDraftRepo:
         self._conn = conn
 
     def create(self, *, owner_user_id: str, message: str, message_sha256: str) -> PostDraft:
+        now = _now()
         row = self._conn.execute(
             """
             INSERT INTO post_draft (owner_user_id, message, message_sha256, status, updated_at)
             VALUES (%s, %s, %s, 'draft', %s)
             RETURNING *
             """,
-            (owner_user_id, message, message_sha256, _now()),
+            (owner_user_id, message, message_sha256, now),
         ).fetchone()
         return _post_draft_from_row(row)
 
@@ -359,6 +427,71 @@ class PostDraftRepo:
         ).fetchone()
         if row is None:
             raise LookupError(f"post_draft not found: {owner_user_id}/{draft_id}")
+        return _post_draft_from_row(row)
+
+    def list_for_owner(self, owner_user_id: str) -> list[PostDraft]:
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM post_draft
+            WHERE owner_user_id = %s
+              AND status = 'draft'
+            ORDER BY created_at DESC, id DESC
+            """,
+            (owner_user_id,),
+        ).fetchall()
+        return [_post_draft_from_row(row) for row in rows]
+
+    def soft_delete(self, owner_user_id: str, draft_id: int) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE post_draft
+            SET status = 'deleted',
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND id = %s
+              AND status = 'draft'
+            """,
+            (now, owner_user_id, draft_id),
+        )
+
+    def mark_sent(
+        self,
+        owner_user_id: str,
+        draft_id: int,
+        *,
+        sent_by_user_bot_id: int,
+        sent_channel_id: str,
+        mattermost_post_id: str,
+    ) -> PostDraft:
+        now = _now()
+        row = self._conn.execute(
+            """
+            UPDATE post_draft
+            SET status = 'sent',
+                sent_at = %s,
+                sent_by_user_bot_id = %s,
+                sent_channel_id = %s,
+                mattermost_post_id = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND id = %s
+              AND status = 'draft'
+            RETURNING *
+            """,
+            (
+                now,
+                sent_by_user_bot_id,
+                sent_channel_id,
+                mattermost_post_id,
+                now,
+                owner_user_id,
+                draft_id,
+            ),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"eligible post_draft not found: {owner_user_id}/{draft_id}")
         return _post_draft_from_row(row)
 
 
