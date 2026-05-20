@@ -1,0 +1,34 @@
+services:
+  mm-post-bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MM_URL: ${MM_URL}
+      MM_BOT_TOKEN: ${MM_BOT_TOKEN}
+      MM_ADMINS: ${MM_ADMINS}
+      MM_VERIFY_SSL: ${MM_VERIFY_SSL:-true}
+      DB_URL: postgresql://${POSTGRES_USER:-mm_post}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-mm_post_bot}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MAX_EVENT_TASKS: ${MAX_EVENT_TASKS:-32}
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mm_post_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-mm_post}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mm_post} -d ${POSTGRES_DB:-mm_post_bot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

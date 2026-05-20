@@ -1,0 +1,867 @@
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from importlib.util import find_spec
+from typing import Any, cast
+
+import pytest
+from testcontainers.postgres import PostgresContainer
+
+from mm_post_bot.commands import CommandContext, dispatch
+from mm_post_bot.db import DbConn, connect_postgres, init_schema
+from mm_post_bot.mm_client import MattermostClient, MattermostError
+from mm_post_bot.repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
+from mm_post_bot.security import hash_message
+
+POSTGRES_IMAGE = "postgres:15-alpine"
+
+
+class FakeMM:
+    async def create_direct_channel(self, user_id_a: str, user_id_b: str) -> dict[str, Any]:
+        return {"id": f"dm-{user_id_a}-{user_id_b}"}
+
+    async def create_post(self, channel_id: str, message: str) -> dict[str, Any]:
+        return {"id": "post-id", "channel_id": channel_id, "message": message}
+
+
+class FakeTokenMM:
+    def __init__(
+        self,
+        rest_base: str,
+        token: str,
+        *,
+        timeout: float = 15.0,
+        verify_ssl: bool = True,
+    ) -> None:
+        self.rest_base = rest_base
+        self.token = token
+        self.timeout = timeout
+        self.verify_ssl = verify_ssl
+
+    async def get_me(self) -> dict[str, Any]:
+        try:
+            identity = TOKEN_IDENTITIES[self.token]
+        except KeyError as exc:
+            raise AssertionError(f"unexpected token validation for {self.token}") from exc
+        if isinstance(identity, BaseException):
+            raise identity
+        return identity
+
+    async def get_channel_by_team_and_name(
+        self,
+        team_name: str,
+        channel_name: str,
+    ) -> dict[str, Any]:
+        try:
+            channel = TOKEN_CHANNELS[(self.token, team_name, channel_name)]
+        except KeyError as exc:
+            raise AssertionError(
+                f"unexpected channel lookup for {self.token}/{team_name}/{channel_name}"
+            ) from exc
+        if isinstance(channel, BaseException):
+            raise channel
+        return channel
+
+    async def create_post(self, channel_id: str, message: str) -> dict[str, Any]:
+        configured = TOKEN_POST_RESULTS.get((self.token, channel_id))
+        if isinstance(configured, BaseException):
+            raise configured
+        if configured is not None:
+            post = configured | {"channel_id": channel_id, "message": message, "token": self.token}
+            CREATED_POSTS.append(post)
+            return post
+
+        post = {
+            "id": f"post-{len(CREATED_POSTS) + 1}",
+            "channel_id": channel_id,
+            "message": message,
+            "token": self.token,
+        }
+        CREATED_POSTS.append(post)
+        return post
+
+    async def aclose(self) -> None:
+        pass
+
+
+class BrokenAuditRepo:
+    def record(self, **kwargs: Any) -> None:
+        raise RuntimeError("audit unavailable")
+
+
+TOKEN_IDENTITIES: dict[str, dict[str, Any] | BaseException] = {}
+TOKEN_CHANNELS: dict[tuple[str, str, str], dict[str, Any] | BaseException] = {}
+TOKEN_POST_RESULTS: dict[tuple[str, str], dict[str, Any] | BaseException] = {}
+CREATED_POSTS: list[dict[str, Any]] = []
+FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+
+
+@dataclass(frozen=True, slots=True)
+class CommandFixture:
+    conn: DbConn
+    users: UserRepo
+    user_bots: UserBotRepo
+    draft_captures: DraftCaptureRepo
+    post_drafts: PostDraftRepo
+    audits: AuditRepo
+    manager_mm: FakeMM
+    token_identities: dict[str, dict[str, Any] | BaseException]
+    token_channels: dict[tuple[str, str, str], dict[str, Any] | BaseException]
+    token_post_results: dict[tuple[str, str], dict[str, Any] | BaseException]
+    created_posts: list[dict[str, Any]]
+
+    def make(
+        self,
+        caller_user_id: str,
+        caller_username: str,
+        *,
+        admin_usernames: set[str] | frozenset[str] | None = None,
+        channel_type: str | None = "D",
+    ) -> CommandContext:
+        return CommandContext(
+            caller_user_id=caller_user_id,
+            caller_username=caller_username,
+            channel_id="dm-channel",
+            channel_type=channel_type,
+            user_repo=self.users,
+            user_bot_repo=self.user_bots,
+            draft_capture_repo=self.draft_captures,
+            post_draft_repo=self.post_drafts,
+            audit_repo=self.audits,
+            manager_mm=cast(MattermostClient, self.manager_mm),
+            manager_user_id="manager-id",
+            admin_usernames=frozenset(admin_usernames or set()),
+            mm_rest_base="https://mm.internal/api/v4",
+            mm_url="https://mm.internal",
+            token_encryption_key=FERNET_KEY,
+            mm_verify_ssl=True,
+        )
+
+
+@pytest.fixture(scope="session")
+def pg_conn() -> DbConn:
+    with PostgresContainer(POSTGRES_IMAGE) as pg:
+        url = pg.get_connection_url()
+        dsn = url.split("+")[0] + "://" + url.split("://")[1]
+        conn = connect_postgres(dsn)
+        init_schema(conn)
+        yield conn
+        conn.close()
+
+
+@pytest.fixture()
+def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
+    pg_conn.execute("BEGIN")
+    TOKEN_IDENTITIES.clear()
+    TOKEN_CHANNELS.clear()
+    TOKEN_POST_RESULTS.clear()
+    CREATED_POSTS.clear()
+    if find_spec("mm_post_bot.commands.bot") is not None:
+        monkeypatch.setattr("mm_post_bot.commands.bot.MattermostClient", FakeTokenMM)
+    if find_spec("mm_post_bot.commands.send") is not None:
+        monkeypatch.setattr("mm_post_bot.commands.send.MattermostClient", FakeTokenMM)
+
+    users = UserRepo(pg_conn)
+    yield CommandFixture(
+        conn=pg_conn,
+        users=users,
+        user_bots=UserBotRepo(pg_conn),
+        draft_captures=DraftCaptureRepo(pg_conn),
+        post_drafts=PostDraftRepo(pg_conn),
+        audits=AuditRepo(pg_conn),
+        manager_mm=FakeMM(),
+        token_identities=TOKEN_IDENTITIES,
+        token_channels=TOKEN_CHANNELS,
+        token_post_results=TOKEN_POST_RESULTS,
+        created_posts=CREATED_POSTS,
+    )
+    TOKEN_IDENTITIES.clear()
+    TOKEN_CHANNELS.clear()
+    TOKEN_POST_RESULTS.clear()
+    CREATED_POSTS.clear()
+    pg_conn.execute("ROLLBACK")
+
+
+async def test_register_creates_pending_user(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!register")
+    assert reply is not None
+    assert "pending" in reply.lower()
+    assert ctx.users.get("alice-id").status == "pending"
+
+
+async def test_admin_registers_as_approved(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!register")
+    assert reply is not None
+    assert "approved" in reply.lower()
+    assert ctx.users.get("admin-id").role == "admin"
+
+
+async def test_user_approve_requires_admin(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    reply = await dispatch(ctx.make("bob-id", "bob"), "!user approve alice")
+    assert reply is not None
+    assert "admin" in reply.lower()
+
+
+async def test_admin_can_approve_block_and_unblock(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    admin_ctx = ctx.make("admin-id", "admin", admin_usernames={"admin"})
+
+    approve = await dispatch(admin_ctx, "!user approve alice")
+    assert approve is not None
+    assert "approved" in approve.lower()
+    assert ctx.users.get("alice-id").status == "approved"
+
+    block = await dispatch(admin_ctx, "!user block alice")
+    assert block is not None
+    assert "blocked" in block.lower()
+    assert ctx.users.get("alice-id").status == "blocked"
+
+    unblock = await dispatch(admin_ctx, "!user unblock alice")
+    assert unblock is not None
+    assert "approved" in unblock.lower()
+    assert ctx.users.get("alice-id").status == "approved"
+
+
+async def test_configured_admins_cannot_be_blocked(ctx: CommandFixture):
+    root_ctx = ctx.make("root-id", "root", admin_usernames={"admin", "root"})
+    await dispatch(root_ctx, "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin", "root"}),
+        "!user block root",
+    )
+
+    assert reply is not None
+    assert "cannot be blocked" in reply.lower()
+    assert ctx.users.get("root-id").status == "approved"
+
+
+async def test_status_reports_unknown_pending_approved_and_blocked(ctx: CommandFixture):
+    unknown = await dispatch(ctx.make("alice-id", "alice"), "!status")
+    assert unknown is not None
+    assert "!register" in unknown
+
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    pending = await dispatch(ctx.make("alice-id", "alice"), "!status")
+    assert pending is not None
+    assert "pending" in pending.lower()
+
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!register")
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!user approve alice")
+    approved = await dispatch(ctx.make("alice-id", "alice"), "!status")
+    assert approved is not None
+    assert "approved" in approved.lower()
+
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!user block alice")
+    blocked = await dispatch(ctx.make("alice-id", "alice"), "!status")
+    assert blocked is not None
+    assert "blocked" in blocked.lower()
+
+
+async def test_admin_lists_pending_users(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    await dispatch(ctx.make("bob-id", "bob"), "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!user list pending",
+    )
+
+    assert reply is not None
+    assert "alice" in reply
+    assert "bob" in reply
+    assert "pending" in reply
+
+
+async def test_user_list_requires_admin(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!user list pending")
+    assert reply is not None
+    assert "admin" in reply.lower()
+
+
+async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "help")
+    assert reply == "All commands must start with !."
+
+
+async def test_bot_add_requires_approved_user(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news token")
+    assert reply is not None
+    assert "approval" in reply.lower()
+
+
+async def test_bot_add_requires_dm(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    reply = await dispatch(ctx.make("alice-id", "alice", channel_type="O"), "!bot add news token")
+    assert reply is not None
+    assert "direct message" in reply.lower()
+
+
+async def test_bot_add_validates_and_encrypts_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    assert reply is not None
+    assert "added" in reply.lower()
+    saved = ctx.user_bots.get_by_owner_and_alias("alice-id", "news")
+    assert saved.bot_user_id == "bot-id"
+    assert saved.token_ciphertext != "secret-token"
+
+
+async def test_bot_list_and_remove(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+
+    listed = await dispatch(ctx.make("alice-id", "alice"), "!bot list")
+    assert listed is not None
+    assert "news" in listed
+    assert "secret-token" not in listed
+
+    removed = await dispatch(ctx.make("alice-id", "alice"), "!bot remove news")
+    assert removed is not None
+    assert "removed" in removed.lower()
+
+
+@pytest.mark.parametrize("command", ["!bot add news token", "!bot list", "!bot remove news"])
+async def test_bot_commands_reject_blocked_user(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+
+
+async def test_draft_start_requires_approved_user(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    assert reply is not None
+    assert "approval" in reply.lower()
+    assert ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC)) is None
+
+
+async def test_draft_start_requires_dm(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice", channel_type="O"), "!draft")
+
+    assert reply is not None
+    assert "direct message" in reply.lower()
+    assert ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC)) is None
+
+
+async def test_draft_start_creates_capture(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    assert reply is not None
+    assert "send the post body" in reply.lower()
+    capture = ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC))
+    assert capture is not None
+    assert capture.expires_at > datetime.now(UTC)
+
+
+async def test_draft_cancel_clears_capture(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!draft cancel")
+
+    assert reply is not None
+    assert "cancelled" in reply.lower()
+    assert ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC)) is None
+
+
+async def test_draft_list_show_and_delete_only_use_own_draft_status(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.upsert_seen_user(user_id="bob-id", username="bob", is_admin=False)
+    ctx.users.approve("bob-id", approved_by="admin-id")
+    own = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="own visible body",
+        message_sha256="own-hash",
+    )
+    other = ctx.post_drafts.create(
+        owner_user_id="bob-id",
+        message="other secret body",
+        message_sha256="other-hash",
+    )
+    deleted = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="deleted secret body",
+        message_sha256="deleted-hash",
+    )
+    sent = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="sent secret body",
+        message_sha256="sent-hash",
+    )
+    ctx.post_drafts.soft_delete("alice-id", deleted.id)
+    ctx.conn.execute("UPDATE post_draft SET status = 'sent' WHERE id = %s", (sent.id,))
+
+    listed = await dispatch(ctx.make("alice-id", "alice"), "!draft list")
+    assert listed is not None
+    assert f"#{own.id}" in listed
+    assert f"#{deleted.id}" not in listed
+    assert f"#{sent.id}" not in listed
+    assert "secret body" not in listed
+
+    shown = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {own.id}")
+    assert shown is not None
+    assert "own visible body" in shown
+
+    for hidden in (other, deleted, sent):
+        hidden_reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {hidden.id}")
+        assert hidden_reply is not None
+        assert "not found" in hidden_reply.lower()
+        assert "secret body" not in hidden_reply
+
+    deleted_reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft delete {own.id}")
+    assert deleted_reply is not None
+    assert "deleted" in deleted_reply.lower()
+    assert ctx.post_drafts.get_for_owner("alice-id", own.id).status == "deleted"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["!draft", "!draft cancel", "!draft list", "!draft show 1", "!draft delete 1"],
+)
+async def test_draft_commands_reject_blocked_user(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+
+
+async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["human-token"] = {
+        "id": "human-id",
+        "username": "alice",
+        "is_bot": False,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add personal human-token")
+
+    assert reply is not None
+    assert "bot token" in reply.lower()
+    with pytest.raises(LookupError):
+        ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_add_rejects_missing_bot_flag(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["ambiguous-token"] = {
+        "id": "human-id",
+        "username": "alice",
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add personal ambiguous-token")
+
+    assert reply is not None
+    assert "bot token" in reply.lower()
+    with pytest.raises(LookupError):
+        ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_add_handles_invalid_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["bad-token"] = MattermostError(401, "invalid token")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news bad-token")
+
+    assert reply is not None
+    assert "could not validate" in reply.lower()
+    assert "bad-token" not in reply
+    with pytest.raises(LookupError):
+        ctx.user_bots.get_by_owner_and_alias("alice-id", "news")
+
+
+async def test_bot_add_response_does_not_include_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["super-secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news super-secret-token")
+
+    assert reply is not None
+    assert "super-secret-token" not in reply
+
+
+async def test_send_posts_saved_draft(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    bot = ctx.user_bots.get_by_owner_and_alias("alice-id", "news")
+    message = "Hello from the saved draft"
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message=message,
+        message_sha256=hash_message(message),
+    )
+    ctx.token_channels[("secret-token", "team", "town-square")] = {
+        "id": "channel-id",
+        "name": "town-square",
+    }
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert "published" in reply.lower()
+    assert ctx.created_posts == [
+        {
+            "id": "post-1",
+            "channel_id": "channel-id",
+            "message": message,
+            "token": "secret-token",
+        }
+    ]
+    sent = ctx.post_drafts.get_for_owner("alice-id", draft.id)
+    assert sent.status == "sent"
+    assert sent.sent_by_user_bot_id == bot.id
+    assert sent.sent_channel_id == "channel-id"
+    assert sent.mattermost_post_id == "post-1"
+
+    audits = ctx.audits.list_for_user("alice-id")
+    assert len(audits) == 1
+    assert audits[0].status == "success"
+    assert audits[0].draft_id == draft.id
+    assert audits[0].user_bot_id == bot.id
+    assert audits[0].bot_user_id == "bot-id"
+    assert audits[0].bot_username == "news-bot"
+    assert audits[0].channel_link == "https://mm.internal/team/channels/town-square"
+    assert audits[0].resolved_channel_id == "channel-id"
+    assert audits[0].resolved_team_name == "team"
+    assert audits[0].resolved_channel_name == "town-square"
+    assert audits[0].message_sha256 == hash_message(message)
+    assert audits[0].mattermost_post_id == "post-1"
+    assert audits[0].error_code is None
+    assert audits[0].error_message is None
+
+
+async def test_send_rejects_foreign_draft(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.upsert_seen_user(user_id="bob-id", username="bob", is_admin=False)
+    ctx.users.approve("bob-id", approved_by="admin-id")
+    foreign = ctx.post_drafts.create(
+        owner_user_id="bob-id",
+        message="do not leak this body",
+        message_sha256=hash_message("do not leak this body"),
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {foreign.id} --bot news --channel https://mm.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert "draft" in reply.lower()
+    assert "unavailable" in reply.lower() or "not found" in reply.lower()
+    assert "do not leak" not in reply
+    assert ctx.created_posts == []
+    assert ctx.audits.list_for_user("alice-id") == []
+
+
+async def test_send_records_failed_audit_on_channel_error(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    bot = ctx.user_bots.get_by_owner_and_alias("alice-id", "news")
+    message = "Draft stays unpublished"
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message=message,
+        message_sha256=hash_message(message),
+    )
+    ctx.token_channels[("secret-token", "team", "missing")] = MattermostError(404, "not found")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/missing",
+    )
+
+    assert reply is not None
+    assert "channel" in reply.lower()
+    assert ctx.created_posts == []
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
+
+    audits = ctx.audits.list_for_user("alice-id")
+    assert len(audits) == 1
+    assert audits[0].status == "failed"
+    assert audits[0].draft_id == draft.id
+    assert audits[0].user_bot_id == bot.id
+    assert audits[0].bot_user_id == "bot-id"
+    assert audits[0].bot_username == "news-bot"
+    assert audits[0].channel_link == "https://mm.internal/team/channels/missing"
+    assert audits[0].resolved_channel_id is None
+    assert audits[0].resolved_team_name == "team"
+    assert audits[0].resolved_channel_name == "missing"
+    assert audits[0].message_sha256 == hash_message(message)
+    assert audits[0].mattermost_post_id is None
+    assert audits[0].error_code == "mattermost_channel"
+    assert audits[0].error_message is not None
+    assert "secret-token" not in audits[0].error_message
+    assert bot.token_ciphertext not in audits[0].error_message
+
+
+async def test_send_records_failed_audit_on_post_error(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    message = "Draft stays draft on post failure"
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message=message,
+        message_sha256=hash_message(message),
+    )
+    ctx.token_channels[("secret-token", "team", "town-square")] = {
+        "id": "channel-id",
+        "name": "town-square",
+    }
+    ctx.token_post_results[("secret-token", "channel-id")] = MattermostError(403, "denied")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert "publish" in reply.lower()
+    assert ctx.created_posts == []
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
+    audits = ctx.audits.list_for_user("alice-id")
+    assert len(audits) == 1
+    assert audits[0].status == "failed"
+    assert audits[0].error_code == "mattermost_post"
+    assert audits[0].resolved_channel_id == "channel-id"
+
+
+async def test_send_records_failed_audit_on_invalid_channel_link(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Invalid link body",
+        message_sha256=hash_message("Invalid link body"),
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel https://evil.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert "channel link" in reply.lower()
+    assert ctx.created_posts == []
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
+    audits = ctx.audits.list_for_user("alice-id")
+    assert len(audits) == 1
+    assert audits[0].status == "failed"
+    assert audits[0].error_code == "channel_link"
+
+
+async def test_send_rejects_deleted_and_sent_drafts(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    deleted = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="deleted body",
+        message_sha256=hash_message("deleted body"),
+    )
+    sent = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="sent body",
+        message_sha256=hash_message("sent body"),
+    )
+    ctx.post_drafts.soft_delete("alice-id", deleted.id)
+    ctx.conn.execute("UPDATE post_draft SET status = 'sent' WHERE id = %s", (sent.id,))
+
+    for draft in (deleted, sent):
+        reply = await dispatch(
+            ctx.make("alice-id", "alice"),
+            f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+        )
+        assert reply is not None
+        assert "unavailable" in reply.lower() or "not found" in reply.lower()
+        assert "body" not in reply
+
+    assert ctx.created_posts == []
+    assert ctx.audits.list_for_user("alice-id") == []
+
+
+async def test_send_failure_audit_error_still_returns_safe_reply(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Audit failure body",
+        message_sha256=hash_message("Audit failure body"),
+    )
+    broken_ctx = replace(
+        ctx.make("alice-id", "alice"),
+        audit_repo=cast(AuditRepo, BrokenAuditRepo()),
+    )
+
+    reply = await dispatch(
+        broken_ctx,
+        f"!send {draft.id} --bot news --channel https://evil.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert "channel link" in reply.lower()
+    assert ctx.created_posts == []
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
+
+
+async def test_send_success_status_and_audit_are_atomic(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Remote success local audit failure",
+        message_sha256=hash_message("Remote success local audit failure"),
+    )
+    ctx.token_channels[("secret-token", "team", "town-square")] = {
+        "id": "channel-id",
+        "name": "town-square",
+    }
+    broken_ctx = replace(
+        ctx.make("alice-id", "alice"),
+        audit_repo=cast(AuditRepo, BrokenAuditRepo()),
+    )
+
+    reply = await dispatch(
+        broken_ctx,
+        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert "mattermost accepted" in reply.lower()
+    assert ctx.created_posts == [
+        {
+            "id": "post-1",
+            "channel_id": "channel-id",
+            "message": "Remote success local audit failure",
+            "token": "secret-token",
+        }
+    ]
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
+    assert ctx.audits.list_for_user("alice-id") == []
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("!send", "usage"),
+        ("!send abc --bot news --channel https://mm.internal/team/channels/town-square", "usage"),
+        ("!send 1 --channel https://mm.internal/team/channels/town-square", "usage"),
+        ("!send 1 --bot news", "usage"),
+    ],
+)
+async def test_send_validates_args(ctx: CommandFixture, command: str, expected: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert expected in reply.lower()
+
+
+@pytest.mark.parametrize(
+    ("setup_status", "expected"),
+    [
+        ("pending", "approval"),
+        ("blocked", "blocked"),
+        (None, "register"),
+    ],
+)
+async def test_send_requires_approved_user(
+    ctx: CommandFixture,
+    setup_status: str | None,
+    expected: str,
+):
+    if setup_status is not None:
+        ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+        if setup_status == "blocked":
+            ctx.users.approve("alice-id", approved_by="admin-id")
+            ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!send 1 --bot news --channel https://mm.internal/team/channels/town-square",
+    )
+
+    assert reply is not None
+    assert expected in reply.lower()
