@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
+from uuid import uuid4
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS app_user (
@@ -89,6 +90,11 @@ class DbConn:
     def close(self) -> None:
         self._inner.close()
 
+    def in_transaction(self) -> bool:
+        from psycopg.pq import TransactionStatus
+
+        return bool(self._inner.info.transaction_status != TransactionStatus.IDLE)
+
 
 def connect_postgres(dsn: str) -> DbConn:
     import psycopg
@@ -111,6 +117,19 @@ def init_schema(conn: DbConn) -> None:
 
 @contextmanager
 def transaction(conn: DbConn) -> Iterator[DbConn]:
+    if conn.in_transaction():
+        savepoint = f"sp_{uuid4().hex}"
+        conn.execute(f"SAVEPOINT {savepoint}")
+        try:
+            yield conn
+        except Exception:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            raise
+        else:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return
+
     conn.execute("BEGIN")
     try:
         yield conn

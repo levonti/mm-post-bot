@@ -403,6 +403,10 @@ class PostDraftRepo:
     def __init__(self, conn: DbConn) -> None:
         self._conn = conn
 
+    @property
+    def conn(self) -> DbConn:
+        return self._conn
+
     def create(self, *, owner_user_id: str, message: str, message_sha256: str) -> PostDraft:
         now = _now()
         row = self._conn.execute(
