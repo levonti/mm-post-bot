@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
-from . import bot, register, status, user_admin
+from . import bot, draft, register, status, user_admin
 from . import help as help_cmd
 from .context import CommandContext
 from .parser import ParsedArgs, parse_command
@@ -15,6 +15,11 @@ REGISTRY: dict[tuple[str, ...], Handler] = {
     ("bot", "add"): bot.add,
     ("bot", "list"): bot.list_bots,
     ("bot", "remove"): bot.remove,
+    ("draft",): draft.start,
+    ("draft", "cancel"): draft.cancel,
+    ("draft", "list"): draft.list_drafts,
+    ("draft", "show"): draft.show,
+    ("draft", "delete"): draft.delete,
     ("user", "approve"): user_admin.approve,
     ("user", "block"): user_admin.block,
     ("user", "unblock"): user_admin.unblock,

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib.util import find_spec
 from typing import Any, cast
 
@@ -281,6 +282,118 @@ async def test_bot_list_and_remove(ctx: CommandFixture):
 
 @pytest.mark.parametrize("command", ["!bot add news token", "!bot list", "!bot remove news"])
 async def test_bot_commands_reject_blocked_user(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+
+
+async def test_draft_start_requires_approved_user(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    assert reply is not None
+    assert "approval" in reply.lower()
+    assert ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC)) is None
+
+
+async def test_draft_start_requires_dm(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice", channel_type="O"), "!draft")
+
+    assert reply is not None
+    assert "direct message" in reply.lower()
+    assert ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC)) is None
+
+
+async def test_draft_start_creates_capture(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    assert reply is not None
+    assert "send the post body" in reply.lower()
+    capture = ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC))
+    assert capture is not None
+    assert capture.expires_at > datetime.now(UTC)
+
+
+async def test_draft_cancel_clears_capture(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!draft cancel")
+
+    assert reply is not None
+    assert "cancelled" in reply.lower()
+    assert ctx.draft_captures.get_active("alice-id", now=datetime.now(UTC)) is None
+
+
+async def test_draft_list_show_and_delete_only_use_own_draft_status(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.upsert_seen_user(user_id="bob-id", username="bob", is_admin=False)
+    ctx.users.approve("bob-id", approved_by="admin-id")
+    own = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="own visible body",
+        message_sha256="own-hash",
+    )
+    other = ctx.post_drafts.create(
+        owner_user_id="bob-id",
+        message="other secret body",
+        message_sha256="other-hash",
+    )
+    deleted = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="deleted secret body",
+        message_sha256="deleted-hash",
+    )
+    sent = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="sent secret body",
+        message_sha256="sent-hash",
+    )
+    ctx.post_drafts.soft_delete("alice-id", deleted.id)
+    ctx.conn.execute("UPDATE post_draft SET status = 'sent' WHERE id = %s", (sent.id,))
+
+    listed = await dispatch(ctx.make("alice-id", "alice"), "!draft list")
+    assert listed is not None
+    assert f"#{own.id}" in listed
+    assert f"#{deleted.id}" not in listed
+    assert f"#{sent.id}" not in listed
+    assert "secret body" not in listed
+
+    shown = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {own.id}")
+    assert shown is not None
+    assert "own visible body" in shown
+
+    for hidden in (other, deleted, sent):
+        hidden_reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {hidden.id}")
+        assert hidden_reply is not None
+        assert "not found" in hidden_reply.lower()
+        assert "secret body" not in hidden_reply
+
+    deleted_reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft delete {own.id}")
+    assert deleted_reply is not None
+    assert "deleted" in deleted_reply.lower()
+    assert ctx.post_drafts.get_for_owner("alice-id", own.id).status == "deleted"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["!draft", "!draft cancel", "!draft list", "!draft show 1", "!draft delete 1"],
+)
+async def test_draft_commands_reject_blocked_user(ctx: CommandFixture, command: str):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
     ctx.users.block("alice-id", blocked_by="admin-id")

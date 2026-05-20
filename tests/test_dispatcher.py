@@ -1,17 +1,83 @@
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
+
+import pytest
 
 from mm_post_bot.commands import CommandContext, dispatch
 from mm_post_bot.dispatcher import (
     CommandContextFactory,
     MessageRouter,
+    handle_draft_body,
     handle_event,
     redact_command_for_log,
 )
+from mm_post_bot.security import hash_message
 
 
 class _UnusedContextFactory:
     def from_post(self, post, channel_type):
         raise AssertionError("context factory should not be called")
+
+
+class _UserRepo:
+    def __init__(self, status: str | None) -> None:
+        self.status = status
+
+    def get(self, user_id: str):
+        if self.status is None:
+            raise LookupError(user_id)
+        return SimpleNamespace(status=self.status)
+
+
+class _DraftCaptureRepo:
+    def __init__(self, active: bool) -> None:
+        self.active = active
+        self.cleared: list[str] = []
+
+    def get_active(self, owner_user_id: str, *, now):
+        if not self.active:
+            return None
+        return SimpleNamespace(owner_user_id=owner_user_id)
+
+    def clear(self, owner_user_id: str) -> None:
+        self.cleared.append(owner_user_id)
+        self.active = False
+
+
+class _PostDraftRepo:
+    def __init__(self) -> None:
+        self.created: list[dict[str, str]] = []
+
+    def create(self, *, owner_user_id: str, message: str, message_sha256: str):
+        self.created.append(
+            {
+                "owner_user_id": owner_user_id,
+                "message": message,
+                "message_sha256": message_sha256,
+            }
+        )
+        return SimpleNamespace(id=42)
+
+
+def _draft_body_ctx(*, user_status: str | None = "approved", active_capture: bool = True):
+    return CommandContext(
+        caller_user_id="alice-id",
+        caller_username="alice",
+        channel_id="dm-channel",
+        channel_type="D",
+        user_repo=cast(Any, _UserRepo(user_status)),
+        user_bot_repo=cast(Any, object()),
+        draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
+        post_draft_repo=cast(Any, _PostDraftRepo()),
+        audit_repo=cast(Any, object()),
+        manager_mm=cast(Any, object()),
+        manager_user_id="manager-id",
+        admin_usernames=frozenset(),
+        mm_rest_base="https://mm.internal/api/v4",
+        mm_url="https://mm.internal",
+        token_encryption_key="key",
+        mm_verify_ssl=True,
+    )
 
 
 def test_dm_is_command():
@@ -68,3 +134,51 @@ async def test_dispatch_returns_parse_error_for_malformed_shell_syntax():
     response = await dispatch(cast(CommandContext, object()), '!help "unterminated')
 
     assert response == "Could not parse command: No closing quotation"
+
+
+async def test_handle_draft_body_saves_active_capture():
+    ctx = _draft_body_ctx()
+
+    response = await handle_draft_body(ctx, "hello from the draft")
+
+    assert response is not None
+    assert "Draft #42 saved" in response
+    assert "!send 42 --bot <alias> --channel <mattermost-channel-link>" in response
+    post_draft_repo = cast(_PostDraftRepo, ctx.post_draft_repo)
+    assert post_draft_repo.created == [
+        {
+            "owner_user_id": "alice-id",
+            "message": "hello from the draft",
+            "message_sha256": hash_message("hello from the draft"),
+        }
+    ]
+    assert cast(_DraftCaptureRepo, ctx.draft_capture_repo).cleared == ["alice-id"]
+
+
+async def test_handle_draft_body_ignores_dm_without_active_capture():
+    ctx = _draft_body_ctx(active_capture=False)
+
+    response = await handle_draft_body(ctx, "hello from the draft")
+
+    assert response is None
+    assert cast(_PostDraftRepo, ctx.post_draft_repo).created == []
+    assert cast(_DraftCaptureRepo, ctx.draft_capture_repo).cleared == []
+
+
+@pytest.mark.parametrize(
+    ("user_status", "expected"),
+    [
+        ("pending", "pending approval"),
+        ("blocked", "blocked"),
+        (None, "!register"),
+    ],
+)
+async def test_handle_draft_body_requires_approved_user(user_status: str | None, expected: str):
+    ctx = _draft_body_ctx(user_status=user_status)
+
+    response = await handle_draft_body(ctx, "pending user draft")
+
+    assert response is not None
+    assert expected in response.lower()
+    assert cast(_PostDraftRepo, ctx.post_draft_repo).created == []
+    assert cast(_DraftCaptureRepo, ctx.draft_capture_repo).cleared == []

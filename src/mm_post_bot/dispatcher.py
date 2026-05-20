@@ -1,14 +1,17 @@
 import json
 import shlex
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from . import commands
+from .commands.access import require_approved_user
 from .commands.context import CommandContext
 from .config import Settings
 from .db import DbConn
 from .mm_client import MattermostClient
 from .repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
+from .security import hash_message
 
 
 class MessageRouter:
@@ -97,7 +100,24 @@ def redact_command_for_log(raw_text: str) -> str:
 
 
 async def handle_draft_body(ctx: CommandContext, body: str) -> str | None:
-    return None
+    capture = ctx.draft_capture_repo.get_active(ctx.caller_user_id, now=datetime.now(UTC))
+    if capture is None:
+        return None
+
+    access_error = require_approved_user(ctx)
+    if access_error is not None:
+        return access_error
+
+    draft = ctx.post_draft_repo.create(
+        owner_user_id=ctx.caller_user_id,
+        message=body,
+        message_sha256=hash_message(body),
+    )
+    ctx.draft_capture_repo.clear(ctx.caller_user_id)
+    return (
+        f"Draft #{draft.id} saved. Send it with:\n"
+        f"!send {draft.id} --bot <alias> --channel <mattermost-channel-link>"
+    )
 
 
 async def handle_event(
