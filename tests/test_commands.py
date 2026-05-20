@@ -7,7 +7,7 @@ from testcontainers.postgres import PostgresContainer
 
 from mm_post_bot.commands import CommandContext, dispatch
 from mm_post_bot.db import DbConn, connect_postgres, init_schema
-from mm_post_bot.mm_client import MattermostClient
+from mm_post_bot.mm_client import MattermostClient, MattermostError
 from mm_post_bot.repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
 
 POSTGRES_IMAGE = "postgres:15-alpine"
@@ -37,15 +37,18 @@ class FakeTokenMM:
 
     async def get_me(self) -> dict[str, Any]:
         try:
-            return TOKEN_IDENTITIES[self.token]
+            identity = TOKEN_IDENTITIES[self.token]
         except KeyError as exc:
             raise AssertionError(f"unexpected token validation for {self.token}") from exc
+        if isinstance(identity, BaseException):
+            raise identity
+        return identity
 
     async def aclose(self) -> None:
         pass
 
 
-TOKEN_IDENTITIES: dict[str, dict[str, Any]] = {}
+TOKEN_IDENTITIES: dict[str, dict[str, Any] | BaseException] = {}
 FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 
 
@@ -303,6 +306,36 @@ async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
     assert "bot token" in reply.lower()
     with pytest.raises(LookupError):
         ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_add_rejects_missing_bot_flag(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["ambiguous-token"] = {
+        "id": "human-id",
+        "username": "alice",
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add personal ambiguous-token")
+
+    assert reply is not None
+    assert "bot token" in reply.lower()
+    with pytest.raises(LookupError):
+        ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_add_handles_invalid_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["bad-token"] = MattermostError(401, "invalid token")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news bad-token")
+
+    assert reply is not None
+    assert "could not validate" in reply.lower()
+    assert "bad-token" not in reply
+    with pytest.raises(LookupError):
+        ctx.user_bots.get_by_owner_and_alias("alice-id", "news")
 
 
 async def test_bot_add_response_does_not_include_token(ctx: CommandFixture):

@@ -85,7 +85,7 @@ Rules:
 
 - `!bot add` is accepted only in a direct message with the manager bot.
 - The service validates the provided token by calling `GET /api/v4/users/me` with that token.
-- The returned user must be usable as a posting identity. If Mattermost exposes bot-account metadata in the response, the service should reject non-bot users. If the response does not expose a reliable bot flag, the MVP records the identity and relies on the token's Mattermost permissions.
+- The returned user must be usable as a posting identity. For the target Mattermost 10.11 server, `/users/me` is expected to expose bot-account metadata, so the MVP accepts only responses with `is_bot` equal to `true` and rejects missing, false, or malformed bot flags.
 - The token is encrypted before being stored.
 - The plaintext token is never logged, echoed, or stored outside the encrypted column.
 - The service stores a non-secret fingerprint for troubleshooting and duplicate detection.

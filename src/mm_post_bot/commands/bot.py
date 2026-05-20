@@ -1,5 +1,7 @@
 from typing import Any
 
+import httpx
+
 from ..mm_client import MattermostClient, MattermostError
 from ..security import encrypt_token, fingerprint_token
 from .access import require_approved_user
@@ -29,12 +31,12 @@ async def add(ctx: CommandContext, args: ParsedArgs) -> str:
     client = MattermostClient(ctx.mm_rest_base, token, verify_ssl=ctx.mm_verify_ssl)
     try:
         me = await client.get_me()
-    except MattermostError:
+    except (MattermostError, httpx.HTTPError, ValueError):
         return "Could not validate that bot token. Please check it and try again."
     finally:
         await client.aclose()
 
-    if me.get("is_bot") is False:
+    if me.get("is_bot") is not True:
         return "That token belongs to a regular user. Please provide a bot token."
 
     bot_user_id = _string_field(me, "id")
@@ -42,13 +44,18 @@ async def add(ctx: CommandContext, args: ParsedArgs) -> str:
     if bot_user_id is None or bot_username is None:
         return "Could not validate that bot token. Please check it and try again."
 
+    try:
+        token_ciphertext = encrypt_token(token, ctx.token_encryption_key)
+    except ValueError:
+        return "Bot token storage is misconfigured. Please contact an administrator."
+
     bot = ctx.user_bot_repo.add(
         owner_user_id=ctx.caller_user_id,
         alias=alias,
         bot_user_id=bot_user_id,
         bot_username=bot_username,
         bot_display_name=_string_field(me, "display_name"),
-        token_ciphertext=encrypt_token(token, ctx.token_encryption_key),
+        token_ciphertext=token_ciphertext,
         token_fingerprint=fingerprint_token(token),
     )
 
