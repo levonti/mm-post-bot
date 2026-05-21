@@ -813,14 +813,11 @@ async def test_send_posts_saved_draft(ctx: CommandFixture):
         message=message,
         message_sha256=hash_message(message),
     )
-    ctx.token_channels[("secret-token", "team", "town-square")] = {
-        "id": "channel-id",
-        "name": "town-square",
-    }
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+        f"!send {draft.id} --bot news --channel town",
     )
 
     assert reply is not None
@@ -846,10 +843,10 @@ async def test_send_posts_saved_draft(ctx: CommandFixture):
     assert audits[0].user_bot_id == bot.id
     assert audits[0].bot_user_id == "bot-id"
     assert audits[0].bot_username == "news-bot"
-    assert audits[0].channel_link == "https://mm.internal/team/channels/town-square"
+    assert audits[0].channel_link == "town"
     assert audits[0].resolved_channel_id == "channel-id"
-    assert audits[0].resolved_team_name == "team"
-    assert audits[0].resolved_channel_name == "town-square"
+    assert audits[0].resolved_team_name is None
+    assert audits[0].resolved_channel_name is None
     assert audits[0].message_sha256 == hash_message(message)
     assert audits[0].mattermost_post_id == "post-1"
     assert audits[0].error_code is None
@@ -869,7 +866,7 @@ async def test_send_rejects_foreign_draft(ctx: CommandFixture):
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        f"!send {foreign.id} --bot news --channel https://mm.internal/team/channels/town-square",
+        f"!send {foreign.id} --bot news --channel town",
     )
 
     assert reply is not None
@@ -880,7 +877,7 @@ async def test_send_rejects_foreign_draft(ctx: CommandFixture):
     assert ctx.audits.list_for_user("alice-id") == []
 
 
-async def test_send_records_failed_audit_on_channel_error(ctx: CommandFixture):
+async def test_send_records_failed_audit_on_unknown_channel_alias(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
     ctx.token_identities["secret-token"] = {
@@ -896,11 +893,9 @@ async def test_send_records_failed_audit_on_channel_error(ctx: CommandFixture):
         message=message,
         message_sha256=hash_message(message),
     )
-    ctx.token_channels[("secret-token", "team", "missing")] = MattermostError(404, "not found")
-
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/missing",
+        f"!send {draft.id} --bot news --channel missing",
     )
 
     assert reply is not None
@@ -915,13 +910,13 @@ async def test_send_records_failed_audit_on_channel_error(ctx: CommandFixture):
     assert audits[0].user_bot_id == bot.id
     assert audits[0].bot_user_id == "bot-id"
     assert audits[0].bot_username == "news-bot"
-    assert audits[0].channel_link == "https://mm.internal/team/channels/missing"
+    assert audits[0].channel_link == "missing"
     assert audits[0].resolved_channel_id is None
-    assert audits[0].resolved_team_name == "team"
-    assert audits[0].resolved_channel_name == "missing"
+    assert audits[0].resolved_team_name is None
+    assert audits[0].resolved_channel_name is None
     assert audits[0].message_sha256 == hash_message(message)
     assert audits[0].mattermost_post_id is None
-    assert audits[0].error_code == "mattermost_channel"
+    assert audits[0].error_code == "channel_alias"
     assert audits[0].error_message is not None
     assert "secret-token" not in audits[0].error_message
     assert bot.token_ciphertext not in audits[0].error_message
@@ -942,15 +937,12 @@ async def test_send_records_failed_audit_on_post_error(ctx: CommandFixture):
         message=message,
         message_sha256=hash_message(message),
     )
-    ctx.token_channels[("secret-token", "team", "town-square")] = {
-        "id": "channel-id",
-        "name": "town-square",
-    }
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
     ctx.token_post_results[("secret-token", "channel-id")] = MattermostError(403, "denied")
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+        f"!send {draft.id} --bot news --channel town",
     )
 
     assert reply is not None
@@ -964,7 +956,7 @@ async def test_send_records_failed_audit_on_post_error(ctx: CommandFixture):
     assert audits[0].resolved_channel_id == "channel-id"
 
 
-async def test_send_records_failed_audit_on_invalid_channel_link(ctx: CommandFixture):
+async def test_send_rejects_old_channel_link_addressing(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
     ctx.token_identities["secret-token"] = {
@@ -985,13 +977,13 @@ async def test_send_records_failed_audit_on_invalid_channel_link(ctx: CommandFix
     )
 
     assert reply is not None
-    assert "channel link" in reply.lower()
+    assert "channel alias" in reply.lower()
     assert ctx.created_posts == []
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
     audits = ctx.audits.list_for_user("alice-id")
     assert len(audits) == 1
     assert audits[0].status == "failed"
-    assert audits[0].error_code == "channel_link"
+    assert audits[0].error_code == "channel_alias"
 
 
 async def test_send_rejects_deleted_and_sent_drafts(ctx: CommandFixture):
@@ -1013,7 +1005,7 @@ async def test_send_rejects_deleted_and_sent_drafts(ctx: CommandFixture):
     for draft in (deleted, sent):
         reply = await dispatch(
             ctx.make("alice-id", "alice"),
-            f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+            f"!send {draft.id} --bot news --channel town",
         )
         assert reply is not None
         assert "unavailable" in reply.lower() or "not found" in reply.lower()
@@ -1048,7 +1040,7 @@ async def test_send_failure_audit_error_still_returns_safe_reply(ctx: CommandFix
     )
 
     assert reply is not None
-    assert "channel link" in reply.lower()
+    assert "channel alias" in reply.lower()
     assert ctx.created_posts == []
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
 
@@ -1067,10 +1059,7 @@ async def test_send_success_status_and_audit_are_atomic(ctx: CommandFixture):
         message="Remote success local audit failure",
         message_sha256=hash_message("Remote success local audit failure"),
     )
-    ctx.token_channels[("secret-token", "team", "town-square")] = {
-        "id": "channel-id",
-        "name": "town-square",
-    }
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
     broken_ctx = replace(
         ctx.make("alice-id", "alice"),
         audit_repo=cast(AuditRepo, BrokenAuditRepo()),
@@ -1078,7 +1067,7 @@ async def test_send_success_status_and_audit_are_atomic(ctx: CommandFixture):
 
     reply = await dispatch(
         broken_ctx,
-        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
+        f"!send {draft.id} --bot news --channel town",
     )
 
     assert reply is not None
@@ -1099,8 +1088,8 @@ async def test_send_success_status_and_audit_are_atomic(ctx: CommandFixture):
     ("command", "expected"),
     [
         ("!send", "usage"),
-        ("!send abc --bot news --channel https://mm.internal/team/channels/town-square", "usage"),
-        ("!send 1 --channel https://mm.internal/team/channels/town-square", "usage"),
+        ("!send abc --bot news --channel town", "usage"),
+        ("!send 1 --channel town", "usage"),
         ("!send 1 --bot news", "usage"),
     ],
 )
@@ -1135,7 +1124,7 @@ async def test_send_requires_approved_user(
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        "!send 1 --bot news --channel https://mm.internal/team/channels/town-square",
+        "!send 1 --bot news --channel town",
     )
 
     assert reply is not None

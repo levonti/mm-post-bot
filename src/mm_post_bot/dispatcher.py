@@ -124,7 +124,7 @@ async def handle_draft_body(ctx: CommandContext, body: str) -> str | None:
     ctx.draft_capture_repo.clear(ctx.caller_user_id)
     return (
         f"Draft #{draft.id} saved. Send it with:\n"
-        f"!send {draft.id} --bot <alias> --channel <mattermost-channel-link>"
+        f"!send {draft.id} --bot <alias> --channel <channel_alias>"
     )
 
 
