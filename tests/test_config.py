@@ -1,4 +1,9 @@
+import pytest
+from pydantic import ValidationError
+
 from mm_post_bot.config import Settings
+
+VALID_FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 
 
 def test_settings_parse_admins_and_urls():
@@ -7,7 +12,7 @@ def test_settings_parse_admins_and_urls():
         mm_bot_token="manager-token",
         mm_admins="alice, bob",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
-        token_encryption_key="0" * 44,
+        token_encryption_key=VALID_FERNET_KEY,
     )
 
     assert settings.admin_usernames == ["alice", "bob"]
@@ -25,7 +30,18 @@ def test_settings_normalize_admin_mentions():
         mm_bot_token="manager-token",
         mm_admins="@alice, @bob",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
-        token_encryption_key="0" * 44,
+        token_encryption_key=VALID_FERNET_KEY,
     )
 
     assert settings.admin_usernames == ["alice", "bob"]
+
+
+def test_settings_reject_invalid_token_encryption_key():
+    with pytest.raises(ValidationError, match="TOKEN_ENCRYPTION_KEY must be a valid Fernet key"):
+        Settings(
+            mm_url="https://mm.internal/i",
+            mm_bot_token="manager-token",
+            mm_admins="alice",
+            db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+            token_encryption_key="too-short",
+        )

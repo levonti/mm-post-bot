@@ -8,6 +8,8 @@ from mm_post_bot import __main__ as entrypoint
 from mm_post_bot.config import Settings
 from mm_post_bot.dispatcher import CommandContextFactory, MessageRouter
 
+VALID_FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+
 
 class FakeConn:
     def __init__(self) -> None:
@@ -46,7 +48,7 @@ def _settings() -> Settings:
         mm_bot_token="manager-token",
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
-        token_encryption_key="0" * 44,
+        token_encryption_key=VALID_FERNET_KEY,
         mm_verify_ssl=False,
     )
 

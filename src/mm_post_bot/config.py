@@ -1,4 +1,5 @@
-from pydantic import Field, HttpUrl
+from cryptography.fernet import Fernet
+from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +18,15 @@ class Settings(BaseSettings):
     mm_verify_ssl: bool = Field(default=True)
     log_level: str = Field(default="INFO")
     max_event_tasks: int = Field(default=32, ge=1)
+
+    @field_validator("token_encryption_key")
+    @classmethod
+    def validate_token_encryption_key(cls, value: str) -> str:
+        try:
+            Fernet(value.encode())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
+        return value
 
     @property
     def admin_usernames(self) -> list[str]:
