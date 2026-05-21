@@ -16,6 +16,11 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 "!bot add <alias> <token> - add a posting bot token",
                 "!bot list - list your posting bots",
                 "!bot remove <alias> - remove a posting bot",
+                "!channel add <alias> <channel_id> - add a channel alias",
+                "!channel set <alias> <channel_id> - update a channel alias",
+                "!channel remove <alias> - remove a channel alias",
+                "!channel list - list your channel aliases",
+                "!channel show <alias> - show a channel alias",
                 "!draft - capture your next DM as a draft",
                 "!draft cancel - cancel active draft capture",
                 "!draft list - list saved drafts",
@@ -23,7 +28,7 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 "!draft delete <draft_id> - delete a saved draft",
                 (
                     "!send <draft_id> --bot <alias> "
-                    "--channel <mattermost-channel-link> - publish a draft"
+                    "--channel <channel_alias> - publish a draft"
                 ),
             ]
         )

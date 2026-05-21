@@ -404,8 +404,10 @@ async def test_help_changes_after_user_approval(ctx: CommandFixture):
     approved = await dispatch(ctx.make("alice-id", "alice"), "!help")
     assert approved is not None
     assert "!bot add <alias> <token>" in approved
+    assert "!channel add <alias> <channel_id>" in approved
+    assert "!channel set <alias> <channel_id>" in approved
     assert "!draft" in approved
-    assert "!send <draft_id>" in approved
+    assert "!send <draft_id> --bot <alias> --channel <channel_alias>" in approved
 
 
 async def test_help_keeps_posting_commands_from_blocked_user(ctx: CommandFixture):

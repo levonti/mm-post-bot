@@ -8,9 +8,10 @@
 - Один manager bot слушает личные сообщения и упоминания в каналах.
 - Пользователь регистрируется, администратор одобряет доступ.
 - Пользователь добавляет токены уже созданных Mattermost-ботов под локальными alias.
+- Пользователь добавляет Mattermost channel IDs под локальными channel alias.
 - Сообщение сначала сохраняется как draft, затем отправляется явной командой `!send`.
-- Целевой канал задается ссылкой Mattermost вида
-  `https://mm.internal/i/<team-name>/channels/<channel-name>`.
+- Целевой канал выбирается по пользовательскому channel alias; сам alias хранит Mattermost
+  channel ID.
 - Токены posting-ботов хранятся в PostgreSQL в зашифрованном виде.
 - Каждая попытка отправки записывается в audit log.
 
@@ -24,8 +25,8 @@
 - Manager bot account с personal access token. Этот токен задается в `MM_BOT_TOKEN`.
 - Уже существующие posting bot accounts. Их токены пользователи добавляют командой
   `!bot add <alias> <token>`.
-- Каналы, куда разрешена публикация. Для отправки пользователь передает ссылку на канал, а не
-  короткое имя канала.
+- Каналы, куда разрешена публикация. Пользователь добавляет Mattermost channel ID командой
+  `!channel add <alias> <channel_id>`, а при отправке использует alias.
 - Администраторы приложения задаются username-ами в `MM_ADMINS`; это не системные
   администраторы Mattermost, а админы внутри этого приложения.
 
@@ -99,12 +100,17 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 !bot add <alias> <token>
 !bot list
 !bot remove <alias>
+!channel add <alias> <channel_id>
+!channel set <alias> <channel_id>
+!channel remove <alias>
+!channel list
+!channel show <alias>
 !draft
 !draft cancel
 !draft list
 !draft show <draft_id>
 !draft delete <draft_id>
-!send <draft_id> --bot <alias> --channel <mattermost-channel-link>
+!send <draft_id> --bot <alias> --channel <channel_alias>
 ```
 
 Админские команды:
@@ -121,15 +127,15 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 1. Отправьте `!draft` в DM manager-боту.
 2. Следующее обычное DM-сообщение сохранится как черновик.
 3. Проверьте черновик через `!draft list` или `!draft show <draft_id>`.
-4. Опубликуйте его через `!send <draft_id> --bot <alias> --channel <mattermost-channel-link>`.
+4. Опубликуйте его через `!send <draft_id> --bot <alias> --channel <channel_alias>`.
 
 В каналах команды должны начинаться с упоминания manager-бота, например
 `@postbot !status`. В DM упоминание не нужно.
 
 ## Manual smoke test для https://mm.internal/i
 
-Подготовьте реальный manager bot token, реальный posting bot token и ссылку на существующий
-канал.
+Подготовьте реальный manager bot token, реальный posting bot token и Mattermost channel ID
+целевого канала.
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -154,6 +160,7 @@ docker compose logs -f mm-post-bot
 
 ```text
 !bot add news <existing-bot-token>
+!channel add town <mattermost-channel-id>
 !draft
 ```
 
@@ -166,7 +173,7 @@ Smoke test from mm-post-bot.
 Затем отправьте:
 
 ```text
-!send 1 --bot news --channel https://mm.internal/i/<team-name>/channels/<channel-name>
+!send 1 --bot news --channel town
 ```
 
 Ожидаемый результат: в целевом канале появится `Smoke test from mm-post-bot.` от выбранного
@@ -183,6 +190,7 @@ posting bot account.
 - Токен, добавленный через `!bot add`, доступен приложению для отправки сообщений от имени
   соответствующего Mattermost-бота.
 - Удаление alias через `!bot remove` мягкое: старые audit records сохраняются.
+- Удаление channel alias через `!channel remove` мягкое: старые audit records сохраняются.
 - MVP не реализует UI, очередь повторных отправок, rate limiting, ротацию ключей шифрования и
   автоматическое создание Mattermost bot accounts.
 - WebSocket listener переподключается с backoff, но длительная недоступность Mattermost или
