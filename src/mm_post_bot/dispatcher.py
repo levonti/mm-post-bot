@@ -70,7 +70,7 @@ class CommandContextFactory:
     def from_post(self, post: Mapping[str, Any], channel_type: str | None) -> CommandContext:
         return CommandContext(
             caller_user_id=str(post.get("user_id") or ""),
-            caller_username=str(post.get("username") or post.get("sender_name") or ""),
+            caller_username=_post_username(post),
             channel_id=str(post.get("channel_id") or ""),
             channel_type=channel_type,
             user_repo=UserRepo(self._conn),
@@ -187,3 +187,8 @@ def _channel_type(data: Mapping[str, Any], post: Mapping[str, Any]) -> str | Non
 def _post_message(post: Mapping[str, Any]) -> str:
     message = post.get("message")
     return message if isinstance(message, str) else ""
+
+
+def _post_username(post: Mapping[str, Any]) -> str:
+    username = post.get("username") or post.get("sender_name") or ""
+    return str(username).lstrip("@")

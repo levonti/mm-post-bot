@@ -7,7 +7,7 @@ VALID_STATUSES = frozenset({"pending", "approved", "blocked"})
 
 
 def _is_admin(ctx: CommandContext) -> bool:
-    return ctx.caller_username in ctx.admin_usernames
+    return ctx.caller_username.lstrip("@") in ctx.admin_usernames
 
 
 def _require_admin(ctx: CommandContext) -> str | None:
@@ -17,6 +17,7 @@ def _require_admin(ctx: CommandContext) -> str | None:
 
 
 def _resolve_user(ctx: CommandContext, target: str) -> AppUser | None:
+    target = target.lstrip("@")
     try:
         return ctx.user_repo.get_by_username(target)
     except LookupError:
@@ -63,7 +64,7 @@ async def block(ctx: CommandContext, args: ParsedArgs) -> str:
     user = _resolve_user(ctx, target)
     if user is None:
         return f"Could not find user {target}."
-    if user.username in ctx.admin_usernames:
+    if user.username.lstrip("@") in ctx.admin_usernames:
         return "Configured admins cannot be blocked."
 
     blocked = ctx.user_repo.block(user.user_id, blocked_by=ctx.caller_user_id)

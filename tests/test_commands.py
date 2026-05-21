@@ -195,6 +195,14 @@ async def test_admin_registers_as_approved(ctx: CommandFixture):
     assert ctx.users.get("admin-id").role == "admin"
 
 
+async def test_admin_registers_as_approved_with_mention_style_username(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("admin-id", "@admin", admin_usernames={"admin"}), "!register")
+    assert reply is not None
+    assert "approved" in reply.lower()
+    assert ctx.users.get("admin-id").username == "admin"
+    assert ctx.users.get("admin-id").role == "admin"
+
+
 async def test_user_approve_requires_admin(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     reply = await dispatch(ctx.make("bob-id", "bob"), "!user approve alice")
@@ -219,6 +227,18 @@ async def test_admin_can_approve_block_and_unblock(ctx: CommandFixture):
     unblock = await dispatch(admin_ctx, "!user unblock alice")
     assert unblock is not None
     assert "approved" in unblock.lower()
+    assert ctx.users.get("alice-id").status == "approved"
+
+
+async def test_admin_can_approve_mention_style_target(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "@alice"), "!register")
+    admin_ctx = ctx.make("admin-id", "@admin", admin_usernames={"admin"})
+    await dispatch(admin_ctx, "!register")
+
+    approve = await dispatch(admin_ctx, "!user approve @alice")
+
+    assert approve is not None
+    assert "approved" in approve.lower()
     assert ctx.users.get("alice-id").status == "approved"
 
 

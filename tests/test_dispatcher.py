@@ -4,6 +4,7 @@ from typing import Any, cast
 import pytest
 
 from mm_post_bot.commands import CommandContext, dispatch
+from mm_post_bot.config import Settings
 from mm_post_bot.dispatcher import (
     CommandContextFactory,
     MessageRouter,
@@ -111,6 +112,26 @@ def test_non_command_dm_can_be_draft_body():
 def test_draft_body_only_in_dm():
     router = MessageRouter(manager_user_id="mgr", manager_username="postbot")
     assert router.extract_draft_body({"user_id": "u1", "message": "draft body"}, "O") is None
+
+
+def test_context_factory_normalizes_sender_name_username():
+    settings = Settings(
+        mm_url="https://mm.internal/i",
+        mm_bot_token="manager-token",
+        mm_admins="levonti",
+        db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+        token_encryption_key="0" * 44,
+    )
+    factory = CommandContextFactory(
+        conn=cast(Any, object()),
+        settings=settings,
+        manager_mm=cast(Any, object()),
+        manager_user_id="mgr",
+    )
+
+    ctx = factory.from_post({"user_id": "u1", "sender_name": "@levonti"}, "D")
+
+    assert ctx.caller_username == "levonti"
 
 
 def test_redacts_bot_add_token():
