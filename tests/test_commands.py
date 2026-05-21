@@ -385,6 +385,48 @@ async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
     assert reply == "All commands must start with !."
 
 
+async def test_help_changes_after_user_approval(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    pending = await dispatch(ctx.make("alice-id", "alice"), "!help")
+    assert pending is not None
+    assert "!register" in pending
+    assert "!bot add" not in pending
+    assert "!send" not in pending
+
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!register")
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!user approve alice")
+
+    approved = await dispatch(ctx.make("alice-id", "alice"), "!help")
+    assert approved is not None
+    assert "!bot add <alias> <token>" in approved
+    assert "!draft" in approved
+    assert "!send <draft_id>" in approved
+
+
+async def test_help_keeps_posting_commands_from_blocked_user(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!help")
+
+    assert reply is not None
+    assert "!status" in reply
+    assert "!bot add" not in reply
+    assert "!send" not in reply
+
+
+async def test_help_shows_admin_commands_for_mention_style_admin(ctx: CommandFixture):
+    await dispatch(ctx.make("admin-id", "@admin", admin_usernames={"admin"}), "!register")
+
+    reply = await dispatch(ctx.make("admin-id", "@admin", admin_usernames={"admin"}), "!help")
+
+    assert reply is not None
+    assert "!bot add" in reply
+    assert "!user approve" in reply
+
+
 async def test_bot_add_requires_approved_user(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add news token")
