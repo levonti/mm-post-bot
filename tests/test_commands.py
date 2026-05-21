@@ -9,8 +9,14 @@ from testcontainers.postgres import PostgresContainer
 from mm_post_bot.commands import CommandContext, dispatch
 from mm_post_bot.db import DbConn, connect_postgres, init_schema
 from mm_post_bot.mm_client import MattermostClient, MattermostError
-from mm_post_bot.repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
-from mm_post_bot.repository import UserChannelRepo
+from mm_post_bot.repository import (
+    AuditRepo,
+    DraftCaptureRepo,
+    PostDraftRepo,
+    UserBotRepo,
+    UserChannelRepo,
+    UserRepo,
+)
 from mm_post_bot.security import hash_message
 
 POSTGRES_IMAGE = "postgres:15-alpine"
@@ -693,8 +699,7 @@ async def test_channel_add_lists_shows_sets_and_removes_alias(ctx: CommandFixtur
     assert updated is not None
     assert "updated" in updated.lower()
     assert (
-        ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id
-        == "new-channel-id"
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "new-channel-id"
     )
 
     removed = await dispatch(ctx.make("alice-id", "alice"), "!channel remove town")
@@ -713,7 +718,8 @@ async def test_channel_aliases_are_owner_scoped(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!channel add town alice-channel")
     await dispatch(ctx.make("bob-id", "bob"), "!channel add town bob-channel")
 
-    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "alice-channel"
+    alice_channel = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+    assert alice_channel.channel_id == "alice-channel"
     assert ctx.user_channels.get_by_owner_and_alias("bob-id", "town").channel_id == "bob-channel"
 
 

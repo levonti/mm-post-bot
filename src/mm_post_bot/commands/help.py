@@ -26,10 +26,7 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 "!draft list - list saved drafts",
                 "!draft show <draft_id> - show a saved draft",
                 "!draft delete <draft_id> - delete a saved draft",
-                (
-                    "!send <draft_id> --bot <alias> "
-                    "--channel <channel_alias> - publish a draft"
-                ),
+                ("!send <draft_id> --bot <alias> --channel <channel_alias> - publish a draft"),
             ]
         )
 
