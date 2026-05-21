@@ -10,7 +10,14 @@ from .commands.context import CommandContext
 from .config import Settings
 from .db import DbConn
 from .mm_client import MattermostClient
-from .repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
+from .repository import (
+    AuditRepo,
+    DraftCaptureRepo,
+    PostDraftRepo,
+    UserBotRepo,
+    UserChannelRepo,
+    UserRepo,
+)
 from .security import hash_message
 
 
@@ -75,6 +82,7 @@ class CommandContextFactory:
             channel_type=channel_type,
             user_repo=UserRepo(self._conn),
             user_bot_repo=UserBotRepo(self._conn),
+            user_channel_repo=UserChannelRepo(self._conn),
             draft_capture_repo=DraftCaptureRepo(self._conn),
             post_draft_repo=PostDraftRepo(self._conn),
             audit_repo=AuditRepo(self._conn),

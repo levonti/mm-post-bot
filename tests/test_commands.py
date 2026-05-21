@@ -10,6 +10,7 @@ from mm_post_bot.commands import CommandContext, dispatch
 from mm_post_bot.db import DbConn, connect_postgres, init_schema
 from mm_post_bot.mm_client import MattermostClient, MattermostError
 from mm_post_bot.repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
+from mm_post_bot.repository import UserChannelRepo
 from mm_post_bot.security import hash_message
 
 POSTGRES_IMAGE = "postgres:15-alpine"
@@ -116,6 +117,7 @@ class CommandFixture:
     conn: DbConn
     users: UserRepo
     user_bots: UserBotRepo
+    user_channels: UserChannelRepo
     draft_captures: DraftCaptureRepo
     post_drafts: PostDraftRepo
     audits: AuditRepo
@@ -140,6 +142,7 @@ class CommandFixture:
             channel_type=channel_type,
             user_repo=self.users,
             user_bot_repo=self.user_bots,
+            user_channel_repo=self.user_channels,
             draft_capture_repo=self.draft_captures,
             post_draft_repo=self.post_drafts,
             audit_repo=self.audits,
@@ -181,6 +184,7 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
         conn=pg_conn,
         users=users,
         user_bots=UserBotRepo(pg_conn),
+        user_channels=UserChannelRepo(pg_conn),
         draft_captures=DraftCaptureRepo(pg_conn),
         post_drafts=PostDraftRepo(pg_conn),
         audits=AuditRepo(pg_conn),
@@ -663,6 +667,134 @@ async def test_bot_add_response_does_not_include_token(ctx: CommandFixture):
 
     assert reply is not None
     assert "super-secret-token" not in reply
+
+
+async def test_channel_add_lists_shows_sets_and_removes_alias(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    added = await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+
+    assert added is not None
+    assert "added" in added.lower()
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "channel-id"
+
+    listed = await dispatch(ctx.make("alice-id", "alice"), "!channel list")
+    assert listed is not None
+    assert "town - channel-id" in listed
+
+    shown = await dispatch(ctx.make("alice-id", "alice"), "!channel show town")
+    assert shown is not None
+    assert "town - channel-id" in shown
+
+    updated = await dispatch(ctx.make("alice-id", "alice"), "!channel set town new-channel-id")
+    assert updated is not None
+    assert "updated" in updated.lower()
+    assert (
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id
+        == "new-channel-id"
+    )
+
+    removed = await dispatch(ctx.make("alice-id", "alice"), "!channel remove town")
+    assert removed is not None
+    assert "removed" in removed.lower()
+    with pytest.raises(LookupError):
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
+async def test_channel_aliases_are_owner_scoped(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.upsert_seen_user(user_id="bob-id", username="bob", is_admin=False)
+    ctx.users.approve("bob-id", approved_by="admin-id")
+
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town alice-channel")
+    await dispatch(ctx.make("bob-id", "bob"), "!channel add town bob-channel")
+
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "alice-channel"
+    assert ctx.user_channels.get_by_owner_and_alias("bob-id", "town").channel_id == "bob-channel"
+
+
+async def test_channel_add_rejects_duplicate_alias_and_links(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+
+    duplicate = await dispatch(ctx.make("alice-id", "alice"), "!channel add town other-channel")
+    link = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!channel add link https://mm.internal/team/channels/town-square",
+    )
+
+    assert duplicate is not None
+    assert "already" in duplicate.lower()
+    assert link is not None
+    assert "channel id" in link.lower()
+    assert "link" in link.lower()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "!channel add town channel-id",
+        "!channel set town channel-id",
+        "!channel remove town",
+        "!channel list",
+        "!channel show town",
+    ],
+)
+async def test_channel_commands_reject_blocked_user(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "!channel add town channel-id",
+        "!channel set town channel-id",
+        "!channel remove town",
+        "!channel list",
+        "!channel show town",
+    ],
+)
+async def test_channel_commands_require_dm(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice", channel_type="O"), command)
+
+    assert reply is not None
+    assert "direct message" in reply.lower()
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("!channel add town", "usage"),
+        ("!channel set town", "usage"),
+        ("!channel remove", "usage"),
+        ("!channel show", "usage"),
+    ],
+)
+async def test_channel_commands_validate_args(
+    ctx: CommandFixture,
+    command: str,
+    expected: str,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert expected in reply.lower()
 
 
 async def test_send_posts_saved_draft(ctx: CommandFixture):
