@@ -49,6 +49,7 @@ async def approve(ctx: CommandContext, args: ParsedArgs) -> str:
         return f"Could not find user {target}."
 
     approved = ctx.user_repo.approve(user.user_id, approved_by=ctx.caller_user_id)
+    await _notify_user_status(ctx, approved, message="Your mm-post-bot access has been approved.")
     return f"Approved {approved.username} ({approved.user_id})."
 
 
@@ -68,6 +69,7 @@ async def block(ctx: CommandContext, args: ParsedArgs) -> str:
         return "Configured admins cannot be blocked."
 
     blocked = ctx.user_repo.block(user.user_id, blocked_by=ctx.caller_user_id)
+    await _notify_user_status(ctx, blocked, message="Your mm-post-bot access has been blocked.")
     return f"Blocked {blocked.username} ({blocked.user_id})."
 
 
@@ -85,6 +87,11 @@ async def unblock(ctx: CommandContext, args: ParsedArgs) -> str:
         return f"Could not find user {target}."
 
     approved = ctx.user_repo.unblock(user.user_id, approved_by=ctx.caller_user_id)
+    await _notify_user_status(
+        ctx,
+        approved,
+        message="Your mm-post-bot access has been unblocked and approved.",
+    )
     return f"Unblocked and approved {approved.username} ({approved.user_id})."
 
 
@@ -104,3 +111,21 @@ async def list_users(ctx: CommandContext, args: ParsedArgs) -> str:
 
     rows = [f"{user.username} ({user.user_id}) - {user.role}, {user.status}" for user in users]
     return "\n".join(rows)
+
+
+async def _notify_user_status(ctx: CommandContext, user: AppUser, *, message: str) -> None:
+    try:
+        channel = await ctx.manager_mm.create_direct_channel(ctx.manager_user_id, user.user_id)
+        channel_id = _string_field(channel, "id")
+        if channel_id is None:
+            return
+        await ctx.manager_mm.create_post(channel_id, message)
+    except Exception:
+        return
+
+
+def _string_field(payload: dict[str, object], field: str) -> str | None:
+    value = payload.get(field)
+    if isinstance(value, str) and value:
+        return value
+    return None

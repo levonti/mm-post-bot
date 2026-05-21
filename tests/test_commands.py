@@ -269,16 +269,28 @@ async def test_admin_can_approve_block_and_unblock(ctx: CommandFixture):
     assert approve is not None
     assert "approved" in approve.lower()
     assert ctx.users.get("alice-id").status == "approved"
+    assert ctx.manager_mm.posts[-1] == {
+        "channel_id": "dm-manager-id-alice-id",
+        "message": "Your mm-post-bot access has been approved.",
+    }
 
     block = await dispatch(admin_ctx, "!user block alice")
     assert block is not None
     assert "blocked" in block.lower()
     assert ctx.users.get("alice-id").status == "blocked"
+    assert ctx.manager_mm.posts[-1] == {
+        "channel_id": "dm-manager-id-alice-id",
+        "message": "Your mm-post-bot access has been blocked.",
+    }
 
     unblock = await dispatch(admin_ctx, "!user unblock alice")
     assert unblock is not None
     assert "approved" in unblock.lower()
     assert ctx.users.get("alice-id").status == "approved"
+    assert ctx.manager_mm.posts[-1] == {
+        "channel_id": "dm-manager-id-alice-id",
+        "message": "Your mm-post-bot access has been unblocked and approved.",
+    }
 
 
 async def test_admin_can_approve_mention_style_target(ctx: CommandFixture):
@@ -287,6 +299,24 @@ async def test_admin_can_approve_mention_style_target(ctx: CommandFixture):
     await dispatch(admin_ctx, "!register")
 
     approve = await dispatch(admin_ctx, "!user approve @alice")
+
+    assert approve is not None
+    assert "approved" in approve.lower()
+    assert ctx.users.get("alice-id").status == "approved"
+
+
+async def test_user_status_notification_failure_does_not_block_admin_action(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    async def broken_create_post(channel_id: str, message: str) -> dict[str, Any]:
+        raise MattermostError(500, "post failed")
+
+    ctx.manager_mm.create_post = broken_create_post  # type: ignore[method-assign]
+
+    approve = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!user approve alice",
+    )
 
     assert approve is not None
     assert "approved" in approve.lower()
