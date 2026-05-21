@@ -62,6 +62,13 @@ class MattermostClient:
     async def get_me(self) -> dict[str, Any]:
         return cast(dict[str, Any], await self._request("GET", "/users/me"))
 
+    async def get_user_by_username(self, username: str) -> dict[str, Any]:
+        encoded_username = quote(username.lstrip("@"), safe="")
+        return cast(
+            dict[str, Any],
+            await self._request("GET", f"/users/username/{encoded_username}"),
+        )
+
     async def create_direct_channel(self, user_id_a: str, user_id_b: str) -> dict[str, Any]:
         return cast(
             dict[str, Any],

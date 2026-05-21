@@ -63,6 +63,18 @@ async def test_create_direct_channel(client):
 
 
 @respx.mock
+async def test_get_user_by_username_url_encodes_and_strips_mention(client):
+    route = respx.get("https://mm.example/api/v4/users/username/admin%20user").mock(
+        return_value=httpx.Response(200, json={"id": "admin-id", "username": "admin user"})
+    )
+
+    user = await client.get_user_by_username("@admin user")
+    assert user["id"] == "admin-id"
+    assert route.called
+    await client.aclose()
+
+
+@respx.mock
 async def test_error_surface(client):
     respx.get("https://mm.example/api/v4/users/me").mock(
         return_value=httpx.Response(401, json={"message": "Invalid token"})

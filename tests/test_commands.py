@@ -16,10 +16,26 @@ POSTGRES_IMAGE = "postgres:15-alpine"
 
 
 class FakeMM:
+    def __init__(self) -> None:
+        self.users_by_username: dict[str, dict[str, Any] | BaseException] = {}
+        self.direct_channels: list[tuple[str, str]] = []
+        self.posts: list[dict[str, str]] = []
+
+    async def get_user_by_username(self, username: str) -> dict[str, Any]:
+        try:
+            user = self.users_by_username[username]
+        except KeyError as exc:
+            raise AssertionError(f"unexpected admin lookup for {username}") from exc
+        if isinstance(user, BaseException):
+            raise user
+        return user
+
     async def create_direct_channel(self, user_id_a: str, user_id_b: str) -> dict[str, Any]:
+        self.direct_channels.append((user_id_a, user_id_b))
         return {"id": f"dm-{user_id_a}-{user_id_b}"}
 
     async def create_post(self, channel_id: str, message: str) -> dict[str, Any]:
+        self.posts.append({"channel_id": channel_id, "message": message})
         return {"id": "post-id", "channel_id": channel_id, "message": message}
 
 
@@ -186,6 +202,41 @@ async def test_register_creates_pending_user(ctx: CommandFixture):
     assert reply is not None
     assert "pending" in reply.lower()
     assert ctx.users.get("alice-id").status == "pending"
+
+
+async def test_register_notifies_configured_admins(ctx: CommandFixture):
+    ctx.manager_mm.users_by_username["admin"] = {"id": "admin-id", "username": "admin"}
+
+    reply = await dispatch(
+        ctx.make("alice-id", "@alice", admin_usernames={"admin"}),
+        "!register",
+    )
+
+    assert reply is not None
+    assert "pending" in reply.lower()
+    assert ctx.manager_mm.direct_channels == [("manager-id", "admin-id")]
+    assert ctx.manager_mm.posts == [
+        {
+            "channel_id": "dm-manager-id-admin-id",
+            "message": (
+                "New registration request from alice (alice-id).\nApprove with: !user approve alice"
+            ),
+        }
+    ]
+
+
+async def test_register_notification_failures_do_not_block_registration(ctx: CommandFixture):
+    ctx.manager_mm.users_by_username["admin"] = MattermostError(404, "missing")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice", admin_usernames={"admin"}),
+        "!register",
+    )
+
+    assert reply is not None
+    assert "pending" in reply.lower()
+    assert ctx.users.get("alice-id").status == "pending"
+    assert ctx.manager_mm.posts == []
 
 
 async def test_admin_registers_as_approved(ctx: CommandFixture):
