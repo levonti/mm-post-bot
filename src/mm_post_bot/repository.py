@@ -39,6 +39,17 @@ class UserBot:
 
 
 @dataclass(frozen=True, slots=True)
+class UserChannel:
+    id: int
+    owner_user_id: str
+    alias: str
+    channel_id: str
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class DraftCapture:
     owner_user_id: str
     created_at: datetime
@@ -106,6 +117,18 @@ def _user_bot_from_row(row: Any) -> UserBot:
         bot_display_name=row["bot_display_name"],
         token_ciphertext=row["token_ciphertext"],
         token_fingerprint=row["token_fingerprint"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        deleted_at=row["deleted_at"],
+    )
+
+
+def _user_channel_from_row(row: Any) -> UserChannel:
+    return UserChannel(
+        id=row["id"],
+        owner_user_id=row["owner_user_id"],
+        alias=row["alias"],
+        channel_id=row["channel_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         deleted_at=row["deleted_at"],
@@ -353,6 +376,88 @@ class UserBotRepo:
         self._conn.execute(
             """
             UPDATE user_bot
+            SET deleted_at = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND alias = %s
+              AND deleted_at IS NULL
+            """,
+            (now, now, owner_user_id, alias),
+        )
+
+
+class UserChannelRepo:
+    def __init__(self, conn: DbConn) -> None:
+        self._conn = conn
+
+    def add(self, *, owner_user_id: str, alias: str, channel_id: str) -> UserChannel:
+        now = _now()
+        row = self._conn.execute(
+            """
+            INSERT INTO user_channel (
+                owner_user_id,
+                alias,
+                channel_id,
+                updated_at
+            )
+            VALUES (%s, %s, %s, %s)
+            RETURNING *
+            """,
+            (owner_user_id, alias, channel_id, now),
+        ).fetchone()
+        return _user_channel_from_row(row)
+
+    def update_channel_id(self, owner_user_id: str, alias: str, *, channel_id: str) -> UserChannel:
+        now = _now()
+        row = self._conn.execute(
+            """
+            UPDATE user_channel
+            SET channel_id = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND alias = %s
+              AND deleted_at IS NULL
+            RETURNING *
+            """,
+            (channel_id, now, owner_user_id, alias),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"user_channel not found: {owner_user_id}/{alias}")
+        return _user_channel_from_row(row)
+
+    def get_by_owner_and_alias(self, owner_user_id: str, alias: str) -> UserChannel:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM user_channel
+            WHERE owner_user_id = %s
+              AND alias = %s
+              AND deleted_at IS NULL
+            """,
+            (owner_user_id, alias),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"user_channel not found: {owner_user_id}/{alias}")
+        return _user_channel_from_row(row)
+
+    def list_for_owner(self, owner_user_id: str) -> list[UserChannel]:
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM user_channel
+            WHERE owner_user_id = %s
+              AND deleted_at IS NULL
+            ORDER BY created_at ASC, alias ASC
+            """,
+            (owner_user_id,),
+        ).fetchall()
+        return [_user_channel_from_row(row) for row in rows]
+
+    def soft_delete(self, owner_user_id: str, alias: str) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE user_channel
             SET deleted_at = %s,
                 updated_at = %s
             WHERE owner_user_id = %s
