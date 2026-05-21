@@ -45,3 +45,18 @@ def test_settings_reject_invalid_token_encryption_key():
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
             token_encryption_key="too-short",
         )
+
+
+def test_settings_do_not_echo_invalid_token_encryption_key():
+    invalid_key = "not-a-real-secret-key"
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            mm_url="https://mm.internal/i",
+            mm_bot_token="manager-token",
+            mm_admins="alice",
+            db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+            token_encryption_key=invalid_key,
+        )
+
+    assert invalid_key not in str(exc_info.value)
