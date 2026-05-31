@@ -10,7 +10,14 @@ from .commands.context import CommandContext
 from .config import Settings
 from .db import DbConn
 from .mm_client import MattermostClient
-from .repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
+from .repository import (
+    AuditRepo,
+    DraftCaptureRepo,
+    PostDraftRepo,
+    UserBotRepo,
+    UserChannelRepo,
+    UserRepo,
+)
 from .security import hash_message
 
 
@@ -70,11 +77,12 @@ class CommandContextFactory:
     def from_post(self, post: Mapping[str, Any], channel_type: str | None) -> CommandContext:
         return CommandContext(
             caller_user_id=str(post.get("user_id") or ""),
-            caller_username=str(post.get("username") or post.get("sender_name") or ""),
+            caller_username=_post_username(post),
             channel_id=str(post.get("channel_id") or ""),
             channel_type=channel_type,
             user_repo=UserRepo(self._conn),
             user_bot_repo=UserBotRepo(self._conn),
+            user_channel_repo=UserChannelRepo(self._conn),
             draft_capture_repo=DraftCaptureRepo(self._conn),
             post_draft_repo=PostDraftRepo(self._conn),
             audit_repo=AuditRepo(self._conn),
@@ -116,7 +124,7 @@ async def handle_draft_body(ctx: CommandContext, body: str) -> str | None:
     ctx.draft_capture_repo.clear(ctx.caller_user_id)
     return (
         f"Draft #{draft.id} saved. Send it with:\n"
-        f"!send {draft.id} --bot <alias> --channel <mattermost-channel-link>"
+        f"!send {draft.id} --bot <alias> --channel <channel_alias>"
     )
 
 
@@ -187,3 +195,8 @@ def _channel_type(data: Mapping[str, Any], post: Mapping[str, Any]) -> str | Non
 def _post_message(post: Mapping[str, Any]) -> str:
     message = post.get("message")
     return message if isinstance(message, str) else ""
+
+
+def _post_username(post: Mapping[str, Any]) -> str:
+    username = post.get("username") or post.get("sender_name") or ""
+    return str(username).lstrip("@")

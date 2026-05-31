@@ -10,6 +10,7 @@ from mm_post_bot.repository import (
     DraftCaptureRepo,
     PostDraftRepo,
     UserBotRepo,
+    UserChannelRepo,
     UserRepo,
 )
 
@@ -33,6 +34,7 @@ def repos(pg_conn: DbConn):
     yield (
         UserRepo(pg_conn),
         UserBotRepo(pg_conn),
+        UserChannelRepo(pg_conn),
         DraftCaptureRepo(pg_conn),
         PostDraftRepo(pg_conn),
         AuditRepo(pg_conn),
@@ -163,8 +165,56 @@ def test_user_bot_soft_delete_hides_and_allows_alias_reuse(repos):
     assert bots.get_by_owner_and_alias("u1", "news").bot_user_id == "bot-2"
 
 
+def test_user_channel_alias_is_owner_scoped(repos):
+    users, _, channels, *_ = repos
+    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
+    users.approve("u1", approved_by="admin-id")
+    users.upsert_seen_user(user_id="u2", username="bob", is_admin=False)
+    users.approve("u2", approved_by="admin-id")
+
+    first = channels.add(owner_user_id="u1", alias="town", channel_id="channel-1")
+    second = channels.add(owner_user_id="u2", alias="town", channel_id="channel-2")
+
+    assert first.id != second.id
+    assert channels.get_by_owner_and_alias("u1", "town").channel_id == "channel-1"
+    assert channels.get_by_owner_and_alias("u2", "town").channel_id == "channel-2"
+
+
+def test_user_channel_duplicate_active_alias_for_same_owner_raises(repos):
+    users, _, channels, *_ = repos
+    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
+    users.approve("u1", approved_by="admin-id")
+    channels.add(owner_user_id="u1", alias="town", channel_id="channel-1")
+
+    with pytest.raises(UniqueViolation):
+        channels.add(owner_user_id="u1", alias="town", channel_id="channel-2")
+
+
+def test_user_channel_update_list_and_soft_delete(repos):
+    users, _, channels, *_ = repos
+    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
+    users.approve("u1", approved_by="admin-id")
+    channels.add(owner_user_id="u1", alias="town", channel_id="old-channel")
+    alerts = channels.add(owner_user_id="u1", alias="alerts", channel_id="alerts-channel")
+
+    updated = channels.update_channel_id("u1", "town", channel_id="new-channel")
+
+    assert updated.channel_id == "new-channel"
+    assert [channel.alias for channel in channels.list_for_owner("u1")] == ["alerts", "town"]
+    assert channels.get_by_owner_and_alias("u1", "alerts") == alerts
+
+    channels.soft_delete("u1", "town")
+
+    assert [channel.alias for channel in channels.list_for_owner("u1")] == ["alerts"]
+    with pytest.raises(LookupError):
+        channels.get_by_owner_and_alias("u1", "town")
+
+    replacement = channels.add(owner_user_id="u1", alias="town", channel_id="replacement-channel")
+    assert channels.get_by_owner_and_alias("u1", "town") == replacement
+
+
 def test_draft_capture_and_post_draft(repos):
-    users, _, captures, drafts, _ = repos
+    users, _, _, captures, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
 
@@ -179,7 +229,7 @@ def test_draft_capture_and_post_draft(repos):
 
 
 def test_post_draft_list_only_returns_active_owner_drafts(repos):
-    users, _, _, drafts, _ = repos
+    users, _, _, _, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     users.upsert_seen_user(user_id="u2", username="bob", is_admin=False)
@@ -192,7 +242,7 @@ def test_post_draft_list_only_returns_active_owner_drafts(repos):
 
 
 def test_post_draft_soft_delete_hides_draft(repos):
-    users, _, _, drafts, _ = repos
+    users, _, _, _, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     draft = drafts.create(owner_user_id="u1", message="hello", message_sha256="hash")
@@ -204,7 +254,7 @@ def test_post_draft_soft_delete_hides_draft(repos):
 
 
 def test_post_draft_mark_sent_sets_sent_fields_and_hides_draft(repos):
-    users, bots, _, drafts, _ = repos
+    users, bots, _, _, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     bot = bots.add(
@@ -235,7 +285,7 @@ def test_post_draft_mark_sent_sets_sent_fields_and_hides_draft(repos):
 
 
 def test_audit_success_row(repos):
-    users, bots, _, drafts, audits = repos
+    users, bots, _, _, drafts, audits = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     bot = bots.add(

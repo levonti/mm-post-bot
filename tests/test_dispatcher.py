@@ -4,6 +4,7 @@ from typing import Any, cast
 import pytest
 
 from mm_post_bot.commands import CommandContext, dispatch
+from mm_post_bot.config import Settings
 from mm_post_bot.dispatcher import (
     CommandContextFactory,
     MessageRouter,
@@ -12,6 +13,8 @@ from mm_post_bot.dispatcher import (
     redact_command_for_log,
 )
 from mm_post_bot.security import hash_message
+
+VALID_FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 
 
 class _UnusedContextFactory:
@@ -67,6 +70,7 @@ def _draft_body_ctx(*, user_status: str | None = "approved", active_capture: boo
         channel_type="D",
         user_repo=cast(Any, _UserRepo(user_status)),
         user_bot_repo=cast(Any, object()),
+        user_channel_repo=cast(Any, object()),
         draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
         post_draft_repo=cast(Any, _PostDraftRepo()),
         audit_repo=cast(Any, object()),
@@ -113,6 +117,26 @@ def test_draft_body_only_in_dm():
     assert router.extract_draft_body({"user_id": "u1", "message": "draft body"}, "O") is None
 
 
+def test_context_factory_normalizes_sender_name_username():
+    settings = Settings(
+        mm_url="https://mm.internal/i",
+        mm_bot_token="manager-token",
+        mm_admins="levonti",
+        db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+        token_encryption_key=VALID_FERNET_KEY,
+    )
+    factory = CommandContextFactory(
+        conn=cast(Any, object()),
+        settings=settings,
+        manager_mm=cast(Any, object()),
+        manager_user_id="mgr",
+    )
+
+    ctx = factory.from_post({"user_id": "u1", "sender_name": "@levonti"}, "D")
+
+    assert ctx.caller_username == "levonti"
+
+
 def test_redacts_bot_add_token():
     assert redact_command_for_log("!bot add news secret-token") == "!bot add news [REDACTED]"
 
@@ -143,7 +167,7 @@ async def test_handle_draft_body_saves_active_capture():
 
     assert response is not None
     assert "Draft #42 saved" in response
-    assert "!send 42 --bot <alias> --channel <mattermost-channel-link>" in response
+    assert "!send 42 --bot <alias> --channel <channel_alias>" in response
     post_draft_repo = cast(_PostDraftRepo, ctx.post_draft_repo)
     assert post_draft_repo.created == [
         {

@@ -1,7 +1,14 @@
 from dataclasses import dataclass
 
 from ..mm_client import MattermostClient
-from ..repository import AuditRepo, DraftCaptureRepo, PostDraftRepo, UserBotRepo, UserRepo
+from ..repository import (
+    AuditRepo,
+    DraftCaptureRepo,
+    PostDraftRepo,
+    UserBotRepo,
+    UserChannelRepo,
+    UserRepo,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +19,7 @@ class CommandContext:
     channel_type: str | None
     user_repo: UserRepo
     user_bot_repo: UserBotRepo
+    user_channel_repo: UserChannelRepo
     draft_capture_repo: DraftCaptureRepo
     post_draft_repo: PostDraftRepo
     audit_repo: AuditRepo
