@@ -12,8 +12,15 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
         username=username,
         is_admin=is_admin,
     )
-    if not is_admin:
-        await _notify_admins(ctx, username=username)
+    if is_admin:
+        return (
+            f"Registered {user.username} as admin.\n"
+            "Your access is approved automatically because your username is configured "
+            "in MM_ADMINS.\n"
+            "You can approve users and use posting commands."
+        )
+
+    await _notify_admins(ctx, username=username)
     return f"Registered {user.username} as {user.role}. Current status: {user.status}."
 
 

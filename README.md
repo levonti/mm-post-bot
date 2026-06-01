@@ -122,6 +122,16 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 !user list [pending|approved|blocked]
 ```
 
+### Администраторы из MM_ADMINS
+
+Пользователь, чей username указан в `MM_ADMINS`, считается configured admin даже до локальной
+регистрации в `app_user`. Такой админ уже может получать заявки на регистрацию и выполнять
+`!user approve`, `!user block`, `!user unblock`, `!user list`.
+
+Чтобы использовать posting-команды (`!bot`, `!channel`, `!draft`, `!send`), configured admin
+должен один раз выполнить `!register`. После этого локальная запись создается сразу со статусом
+`approved` и ролью `admin`; дополнительный approval не нужен.
+
 Как работает draft-first flow:
 
 1. Отправьте `!draft` в DM manager-боту.

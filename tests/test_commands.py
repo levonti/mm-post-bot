@@ -249,17 +249,24 @@ async def test_register_notification_failures_do_not_block_registration(ctx: Com
     assert ctx.manager_mm.posts == []
 
 
-async def test_admin_registers_as_approved(ctx: CommandFixture):
+async def test_admin_registers_as_approved_with_bootstrap_message(ctx: CommandFixture):
     reply = await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!register")
+
     assert reply is not None
-    assert "approved" in reply.lower()
+    assert "Registered admin as admin" in reply
+    assert "approved automatically" in reply
+    assert "MM_ADMINS" in reply
     assert ctx.users.get("admin-id").role == "admin"
+    assert ctx.users.get("admin-id").status == "approved"
+    assert ctx.manager_mm.posts == []
 
 
 async def test_admin_registers_as_approved_with_mention_style_username(ctx: CommandFixture):
     reply = await dispatch(ctx.make("admin-id", "@admin", admin_usernames={"admin"}), "!register")
+
     assert reply is not None
-    assert "approved" in reply.lower()
+    assert "Registered admin as admin" in reply
+    assert "approved automatically" in reply
     assert ctx.users.get("admin-id").username == "admin"
     assert ctx.users.get("admin-id").role == "admin"
 
@@ -269,6 +276,21 @@ async def test_user_approve_requires_admin(ctx: CommandFixture):
     reply = await dispatch(ctx.make("bob-id", "bob"), "!user approve alice")
     assert reply is not None
     assert "admin" in reply.lower()
+
+
+async def test_configured_admin_can_approve_without_local_registration(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!user approve alice",
+    )
+
+    assert reply is not None
+    assert "Approved alice" in reply
+    assert ctx.users.get("alice-id").status == "approved"
+    with pytest.raises(LookupError):
+        ctx.users.get("admin-id")
 
 
 async def test_admin_can_approve_block_and_unblock(ctx: CommandFixture):
@@ -393,6 +415,36 @@ async def test_user_list_requires_admin(ctx: CommandFixture):
 async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
     reply = await dispatch(ctx.make("alice-id", "alice"), "help")
     assert reply == "All commands must start with !."
+
+
+async def test_help_shows_admin_bootstrap_for_unregistered_configured_admin(
+    ctx: CommandFixture,
+):
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!help",
+    )
+
+    assert reply is not None
+    assert "Admin bootstrap" in reply
+    assert "configured as an admin" in reply
+    assert "Run !register" in reply
+    assert "!user approve <username|user_id>" in reply
+    assert "!bot add" not in reply
+    assert "!send" not in reply
+
+
+async def test_help_shows_admin_bootstrap_for_mention_style_configured_admin(
+    ctx: CommandFixture,
+):
+    reply = await dispatch(
+        ctx.make("admin-id", "@admin", admin_usernames={"admin"}),
+        "!help",
+    )
+
+    assert reply is not None
+    assert "Admin bootstrap" in reply
+    assert "!user approve <username|user_id>" in reply
 
 
 async def test_help_changes_after_user_approval(ctx: CommandFixture):
