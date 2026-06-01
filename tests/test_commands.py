@@ -395,6 +395,36 @@ async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
     assert reply == "All commands must start with !."
 
 
+async def test_help_shows_admin_bootstrap_for_unregistered_configured_admin(
+    ctx: CommandFixture,
+):
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!help",
+    )
+
+    assert reply is not None
+    assert "Admin bootstrap" in reply
+    assert "configured as an admin" in reply
+    assert "Run !register" in reply
+    assert "!user approve <username|user_id>" in reply
+    assert "!bot add" not in reply
+    assert "!send" not in reply
+
+
+async def test_help_shows_admin_bootstrap_for_mention_style_configured_admin(
+    ctx: CommandFixture,
+):
+    reply = await dispatch(
+        ctx.make("admin-id", "@admin", admin_usernames={"admin"}),
+        "!help",
+    )
+
+    assert reply is not None
+    assert "Admin bootstrap" in reply
+    assert "!user approve <username|user_id>" in reply
+
+
 async def test_help_changes_after_user_approval(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
 
