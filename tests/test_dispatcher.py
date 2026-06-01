@@ -132,7 +132,7 @@ def test_draft_body_only_in_dm():
 
 def test_context_factory_normalizes_sender_name_username():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",

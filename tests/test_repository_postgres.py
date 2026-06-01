@@ -337,7 +337,7 @@ def test_audit_success_row(repos):
         user_bot_id=bot.id,
         bot_user_id="bot-1",
         bot_username="news-bot",
-        channel_link="https://mm.internal/i/team/channels/town-square",
+        channel_link="https://mm.internal/team/channels/town-square",
         resolved_channel_id="channel-id",
         resolved_team_name="team",
         resolved_channel_name="town-square",

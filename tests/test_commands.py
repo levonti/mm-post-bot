@@ -218,7 +218,7 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
 
 def test_context_factory_uses_default_locale_without_preference(pg_conn: DbConn):
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -243,7 +243,7 @@ def test_context_factory_uses_stored_user_locale(pg_conn: DbConn):
     try:
         UserPreferenceRepo(pg_conn).set_locale("u-locale-stored", "ru")
         settings = Settings(
-            mm_url="https://mm.internal/i",
+            mm_url="https://mm.internal",
             mm_bot_token="manager-token",
             mm_admins="levonti",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -999,7 +999,7 @@ async def test_channel_errors_use_selected_locale(ctx: CommandFixture):
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        "!channel add town https://mm.internal/i/team/channels/town",
+        "!channel add town https://mm.internal/team/channels/town",
     )
 
     assert reply == "Укажите Mattermost channel id, а не ссылку на канал."

@@ -44,7 +44,7 @@ cp .env.example .env
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `MM_URL` | yes | Базовый URL Mattermost, например `https://mm.internal/i`. |
+| `MM_URL` | yes | Базовый URL Mattermost, например `https://mm.internal`. |
 | `MM_BOT_TOKEN` | yes | Token manager bot account. |
 | `MM_ADMINS` | yes | Список admin username через запятую, например `alice,bob`. |
 | `MM_VERIFY_SSL` | no | Проверять TLS-сертификат Mattermost, по умолчанию `true`. |
@@ -153,7 +153,7 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 В каналах команды должны начинаться с упоминания manager-бота, например
 `@postbot !status`. В DM упоминание не нужно.
 
-## Manual smoke test для https://mm.internal/i
+## Manual smoke test для https://mm.internal
 
 Подготовьте реальный manager bot token, реальный posting bot token и Mattermost channel ID
 целевого канала.

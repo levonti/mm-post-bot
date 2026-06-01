@@ -8,7 +8,7 @@ VALID_FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 
 def test_settings_parse_admins_and_urls():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice, bob",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -16,8 +16,8 @@ def test_settings_parse_admins_and_urls():
     )
 
     assert settings.admin_usernames == ["alice", "bob"]
-    assert settings.mm_rest_base == "https://mm.internal/i/api/v4"
-    assert settings.mm_ws_url == "wss://mm.internal/i/api/v4/websocket"
+    assert settings.mm_rest_base == "https://mm.internal/api/v4"
+    assert settings.mm_ws_url == "wss://mm.internal/api/v4/websocket"
 
 
 def test_settings_have_no_system_admin_token_field():
@@ -26,7 +26,7 @@ def test_settings_have_no_system_admin_token_field():
 
 def test_settings_default_locale_defaults_to_english():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -38,7 +38,7 @@ def test_settings_default_locale_defaults_to_english():
 
 def test_settings_normalize_default_locale():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -52,7 +52,7 @@ def test_settings_normalize_default_locale():
 def test_settings_reject_unknown_default_locale():
     with pytest.raises(ValidationError, match="DEFAULT_LOCALE must be one of: en, ru"):
         Settings(
-            mm_url="https://mm.internal/i",
+            mm_url="https://mm.internal",
             mm_bot_token="manager-token",
             mm_admins="alice",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -63,7 +63,7 @@ def test_settings_reject_unknown_default_locale():
 
 def test_settings_normalize_admin_mentions():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="@alice, @bob",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -76,7 +76,7 @@ def test_settings_normalize_admin_mentions():
 def test_settings_reject_invalid_token_encryption_key():
     with pytest.raises(ValidationError, match="TOKEN_ENCRYPTION_KEY must be a valid Fernet key"):
         Settings(
-            mm_url="https://mm.internal/i",
+            mm_url="https://mm.internal",
             mm_bot_token="manager-token",
             mm_admins="alice",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -89,7 +89,7 @@ def test_settings_do_not_echo_invalid_token_encryption_key():
 
     with pytest.raises(ValidationError) as exc_info:
         Settings(
-            mm_url="https://mm.internal/i",
+            mm_url="https://mm.internal",
             mm_bot_token="manager-token",
             mm_admins="alice",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",

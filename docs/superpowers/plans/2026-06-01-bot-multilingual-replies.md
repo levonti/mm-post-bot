@@ -368,7 +368,7 @@ Add to `tests/test_config.py`:
 ```python
 def test_settings_default_locale_defaults_to_english():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -380,7 +380,7 @@ def test_settings_default_locale_defaults_to_english():
 
 def test_settings_normalize_default_locale():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -394,7 +394,7 @@ def test_settings_normalize_default_locale():
 def test_settings_reject_unknown_default_locale():
     with pytest.raises(ValidationError, match="DEFAULT_LOCALE must be one of: en, ru"):
         Settings(
-            mm_url="https://mm.internal/i",
+            mm_url="https://mm.internal",
             mm_bot_token="manager-token",
             mm_admins="alice",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -649,7 +649,7 @@ Add these tests to `tests/test_commands.py`, which already has a real `pg_conn` 
 ```python
 def test_context_factory_uses_default_locale_without_preference(pg_conn):
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -674,7 +674,7 @@ def test_context_factory_uses_stored_user_locale(pg_conn):
 
     UserPreferenceRepo(pg_conn).set_locale("u-locale-stored", "ru")
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -1190,7 +1190,7 @@ async def test_channel_errors_use_selected_locale(ctx: CommandFixture):
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        "!channel add town https://mm.internal/i/team/channels/town",
+        "!channel add town https://mm.internal/team/channels/town",
     )
 
     assert reply == "Укажите Mattermost channel id, а не ссылку на канал."

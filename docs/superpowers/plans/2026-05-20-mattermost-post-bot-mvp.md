@@ -70,7 +70,7 @@ from mm_post_bot.config import Settings
 
 def test_settings_parse_admins_and_urls():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice, bob",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -78,8 +78,8 @@ def test_settings_parse_admins_and_urls():
     )
 
     assert settings.admin_usernames == ["alice", "bob"]
-    assert settings.mm_rest_base == "https://mm.internal/i/api/v4"
-    assert settings.mm_ws_url == "wss://mm.internal/i/api/v4/websocket"
+    assert settings.mm_rest_base == "https://mm.internal/api/v4"
+    assert settings.mm_ws_url == "wss://mm.internal/api/v4/websocket"
 
 
 def test_settings_have_no_system_admin_token_field():
@@ -246,7 +246,7 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
 Create `.env.example`:
 
 ```dotenv
-MM_URL=https://mm.internal/i
+MM_URL=https://mm.internal
 MM_BOT_TOKEN=replace-me-manager-bot-token
 MM_ADMINS=admin_username
 MM_VERIFY_SSL=true
@@ -421,7 +421,7 @@ def test_audit_success_row(repos):
         user_bot_id=bot.id,
         bot_user_id="bot-1",
         bot_username="news-bot",
-        channel_link="https://mm.internal/i/team/channels/town-square",
+        channel_link="https://mm.internal/team/channels/town-square",
         resolved_channel_id="channel-id",
         resolved_team_name="team",
         resolved_channel_name="town-square",
@@ -691,8 +691,8 @@ from mm_post_bot.channel_links import ChannelLink, ChannelLinkError, parse_chann
 
 def test_parse_channel_link_with_subpath():
     parsed = parse_channel_link(
-        "https://mm.internal/i/team-name/channels/channel-name",
-        mm_url="https://mm.internal/i",
+        "https://mm.internal/team-name/channels/channel-name",
+        mm_url="https://mm.internal",
     )
 
     assert parsed == ChannelLink(team_name="team-name", channel_name="channel-name")
@@ -702,13 +702,13 @@ def test_parse_channel_link_rejects_other_host():
     with pytest.raises(ChannelLinkError):
         parse_channel_link(
             "https://evil.internal/i/team-name/channels/channel-name",
-            mm_url="https://mm.internal/i",
+            mm_url="https://mm.internal",
         )
 
 
 def test_parse_channel_link_rejects_non_channel_path():
     with pytest.raises(ChannelLinkError):
-        parse_channel_link("https://mm.internal/i/team-name/pl/channel-name", mm_url="https://mm.internal/i")
+        parse_channel_link("https://mm.internal/team-name/pl/channel-name", mm_url="https://mm.internal")
 ```
 
 - [ ] **Step 3: Run tests to verify failure**
@@ -1420,7 +1420,7 @@ async def test_send_posts_saved_draft(ctx):
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        f"!send {draft.id} --bot news --channel https://mm.internal/i/team/channels/town-square",
+        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
     )
 
     assert "published" in reply.lower()
@@ -1436,7 +1436,7 @@ async def test_send_rejects_foreign_draft(ctx):
     ctx.users.approve("bob-id", approved_by="admin-id")
     draft = ctx.post_drafts.create(owner_user_id="alice-id", message="Hello", message_sha256="hash")
 
-    reply = await dispatch(ctx.make("bob-id", "bob"), f"!send {draft.id} --bot news --channel https://mm.internal/i/team/channels/town-square")
+    reply = await dispatch(ctx.make("bob-id", "bob"), f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square")
     assert "draft" in reply.lower()
     assert "not found" in reply.lower()
 
@@ -1451,7 +1451,7 @@ async def test_send_records_failed_audit_on_channel_error(ctx):
 
     reply = await dispatch(
         ctx.make("alice-id", "alice"),
-        f"!send {draft.id} --bot news --channel https://mm.internal/i/team/channels/town-square",
+        f"!send {draft.id} --bot news --channel https://mm.internal/team/channels/town-square",
     )
 
     assert "channel" in reply.lower()
@@ -1626,7 +1626,7 @@ Expected: all commands pass.
 
 - [ ] **Step 6: Run manual local smoke test against Mattermost**
 
-Use `https://mm.internal/i` with a real manager bot token and a real posting bot token:
+Use `https://mm.internal` with a real manager bot token and a real posting bot token:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -1652,7 +1652,7 @@ Smoke test from mm-post-bot.
 Then send:
 
 ```text
-!send 1 --bot news --channel https://mm.internal/i/<team-name>/channels/<channel-name>
+!send 1 --bot news --channel https://mm.internal/<team-name>/channels/<channel-name>
 ```
 
 Expected: the target channel receives `Smoke test from mm-post-bot.` from the selected bot account.
