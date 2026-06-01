@@ -840,6 +840,18 @@ async def test_draft_commands_reject_blocked_user(ctx: CommandFixture, command: 
     assert "blocked" in reply.lower()
 
 
+async def test_draft_flow_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    started = await dispatch(ctx.make("alice-id", "alice"), "!draft")
+    cancelled = await dispatch(ctx.make("alice-id", "alice"), "!draft cancel")
+
+    assert started == "Ожидание черновика включено. Отправьте текст поста в этом direct message."
+    assert cancelled == "Ожидание черновика отменено."
+
+
 async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
@@ -855,6 +867,21 @@ async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
     assert "bot token" in reply.lower()
     with pytest.raises(LookupError):
         ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_validation_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["human-token"] = {
+        "id": "human-id",
+        "username": "alice",
+        "is_bot": False,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add personal human-token")
+
+    assert reply == "Этот token принадлежит обычному пользователю. Укажите token бота."
 
 
 async def test_bot_add_rejects_missing_bot_flag(ctx: CommandFixture):
@@ -964,6 +991,19 @@ async def test_channel_add_rejects_duplicate_alias_and_links(ctx: CommandFixture
     assert link is not None
     assert "channel id" in link.lower()
     assert "link" in link.lower()
+
+
+async def test_channel_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!channel add town https://mm.internal/i/team/channels/town",
+    )
+
+    assert reply == "Укажите Mattermost channel id, а не ссылку на канал."
 
 
 @pytest.mark.parametrize(
@@ -1084,6 +1124,31 @@ async def test_send_posts_saved_draft(ctx: CommandFixture):
     assert audits[0].mattermost_post_id == "post-1"
     assert audits[0].error_code is None
     assert audits[0].error_message is None
+
+
+async def test_send_success_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "poster",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Привет",
+        message_sha256=hash_message("Привет"),
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel town",
+    )
+
+    assert reply == f"Черновик #{draft.id} опубликован."
 
 
 async def test_send_rejects_foreign_draft(ctx: CommandFixture):
