@@ -272,6 +272,16 @@ async def test_register_creates_pending_user(ctx: CommandFixture):
     assert ctx.users.get("alice-id").status == "pending"
 
 
+async def test_register_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    assert reply is not None
+    assert "Пользователь alice зарегистрирован как user" in reply
+    assert "Текущий статус: pending" in reply
+
+
 async def test_register_notifies_configured_admins(ctx: CommandFixture):
     ctx.manager_mm.users_by_username["admin"] = {"id": "admin-id", "username": "admin"}
 
@@ -288,6 +298,23 @@ async def test_register_notifies_configured_admins(ctx: CommandFixture):
             "channel_id": "dm-manager-id-admin-id",
             "message": (
                 "New registration request from alice (alice-id).\nApprove with: !user approve alice"
+            ),
+        }
+    ]
+
+
+async def test_registration_request_notification_uses_admin_locale(ctx: CommandFixture):
+    ctx.manager_mm.users_by_username["admin"] = {"id": "admin-id", "username": "admin"}
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!lang ru")
+
+    await dispatch(ctx.make("alice-id", "alice", admin_usernames={"admin"}), "!register")
+
+    assert ctx.manager_mm.posts == [
+        {
+            "channel_id": "dm-manager-id-admin-id",
+            "message": (
+                "Новая заявка на регистрацию от alice (alice-id).\n"
+                "Подтвердить: !user approve alice"
             ),
         }
     ]
@@ -449,6 +476,15 @@ async def test_status_reports_unknown_pending_approved_and_blocked(ctx: CommandF
     assert "blocked" in blocked.lower()
 
 
+async def test_status_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!status")
+
+    assert reply == "alice: статус pending, роль user."
+
+
 async def test_admin_lists_pending_users(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     await dispatch(ctx.make("bob-id", "bob"), "!register")
@@ -598,6 +634,34 @@ async def test_help_mentions_lang_command(ctx: CommandFixture):
 
     assert reply is not None
     assert "!lang [en|ru]" in reply
+
+
+async def test_help_uses_selected_locale_but_keeps_commands_english(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!help")
+
+    assert reply is not None
+    assert "Основное:" in reply
+    assert "!register - запросить доступ к постингу" in reply
+    assert "!lang [en|ru]" in reply
+
+
+async def test_user_status_notification_uses_target_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice", admin_usernames={"admin"}), "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!user approve alice",
+    )
+
+    assert reply is not None
+    assert "Approved alice" in reply
+    assert ctx.manager_mm.posts[-1] == {
+        "channel_id": "dm-manager-id-alice-id",
+        "message": "Ваш доступ к mm-post-bot подтверждён.",
+    }
 
 
 async def test_bot_add_requires_approved_user(ctx: CommandFixture):

@@ -1,5 +1,6 @@
 from typing import Any
 
+from ..i18n import recipient_locale, translate
 from .context import CommandContext
 from .parser import ParsedArgs
 
@@ -13,15 +14,10 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
         is_admin=is_admin,
     )
     if is_admin:
-        return (
-            f"Registered {user.username} as admin.\n"
-            "Your access is approved automatically because your username is configured "
-            "in MM_ADMINS.\n"
-            "You can approve users and use posting commands."
-        )
+        return ctx.t("register.admin", username=user.username)
 
     await _notify_admins(ctx, username=username)
-    return f"Registered {user.username} as {user.role}. Current status: {user.status}."
+    return ctx.t("register.user", username=user.username, role=user.role, status=user.status)
 
 
 async def _notify_admins(ctx: CommandContext, *, username: str) -> None:
@@ -35,13 +31,18 @@ async def _notify_admins(ctx: CommandContext, *, username: str) -> None:
             channel_id = _string_field(channel, "id")
             if channel_id is None:
                 continue
-            await ctx.manager_mm.create_post(
-                channel_id,
-                (
-                    f"New registration request from {username} ({ctx.caller_user_id}).\n"
-                    f"Approve with: !user approve {username}"
-                ),
+            locale = recipient_locale(
+                ctx.user_preference_repo,
+                admin_user_id,
+                default_locale=ctx.default_locale,
             )
+            message = translate(
+                locale,
+                "register.admin_request",
+                username=username,
+                user_id=ctx.caller_user_id,
+            )
+            await ctx.manager_mm.create_post(channel_id, message)
         except Exception:
             continue
 
