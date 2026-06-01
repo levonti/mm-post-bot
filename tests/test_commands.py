@@ -278,6 +278,21 @@ async def test_user_approve_requires_admin(ctx: CommandFixture):
     assert "admin" in reply.lower()
 
 
+async def test_configured_admin_can_approve_without_local_registration(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!user approve alice",
+    )
+
+    assert reply is not None
+    assert "Approved alice" in reply
+    assert ctx.users.get("alice-id").status == "approved"
+    with pytest.raises(LookupError):
+        ctx.users.get("admin-id")
+
+
 async def test_admin_can_approve_block_and_unblock(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     admin_ctx = ctx.make("admin-id", "admin", admin_usernames={"admin"})
