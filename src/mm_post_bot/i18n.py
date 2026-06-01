@@ -315,8 +315,8 @@ def normalize_locale(value: str | None) -> str | None:
     return locale if locale in SUPPORTED_LOCALES else None
 
 
-def translate(locale: str | None, key: str, **params: Any) -> str:
-    normalized = normalize_locale(locale) or FALLBACK_LOCALE
+def translate(selected_locale: str | None, key: str, **params: Any) -> str:
+    normalized = normalize_locale(selected_locale) or FALLBACK_LOCALE
     template = CATALOG.get(normalized, {}).get(key) or CATALOG[FALLBACK_LOCALE][key]
     return template.format(**params)
 

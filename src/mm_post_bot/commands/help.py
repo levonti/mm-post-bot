@@ -13,6 +13,7 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 "!help - show available commands",
                 "!register - register for posting access",
                 "!status - show your registration status",
+                ctx.t("help.core.lang"),
             ],
         )
     ]

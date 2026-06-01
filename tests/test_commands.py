@@ -474,6 +474,32 @@ async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
     assert reply == "All commands must start with !."
 
 
+async def test_lang_shows_current_language_before_registration(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!lang")
+
+    assert reply == "Current language: en. Supported languages: en, ru."
+
+
+async def test_lang_changes_language_before_registration(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    assert reply == "Язык изменён на русский."
+    assert ctx.user_preferences.get_locale("alice-id") == "ru"
+
+
+async def test_lang_rejects_unknown_locale(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!lang fr")
+
+    assert reply == "Unsupported language: fr. Supported languages: en, ru."
+
+
+async def test_lang_command_name_stays_english_only(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!язык ru")
+
+    assert reply == "Unknown command: язык"
+    assert ctx.user_preferences.get_locale("alice-id") is None
+
+
 async def test_help_shows_admin_bootstrap_for_unregistered_configured_admin(
     ctx: CommandFixture,
 ):
@@ -546,6 +572,13 @@ async def test_help_shows_admin_commands_for_mention_style_admin(ctx: CommandFix
     assert reply is not None
     assert "!bot add" in reply
     assert "!user approve" in reply
+
+
+async def test_help_mentions_lang_command(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!help")
+
+    assert reply is not None
+    assert "!lang [en|ru]" in reply
 
 
 async def test_bot_add_requires_approved_user(ctx: CommandFixture):
