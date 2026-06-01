@@ -52,6 +52,7 @@ cp .env.example .env
 | `TOKEN_ENCRYPTION_KEY` | yes | Fernet key для шифрования user bot tokens. |
 | `LOG_LEVEL` | no | Уровень логирования, по умолчанию `INFO`. |
 | `MAX_EVENT_TASKS` | no | Максимум одновременно обрабатываемых Mattermost events, по умолчанию `32`. |
+| `DEFAULT_LOCALE` | no | Язык ответов по умолчанию: `en` или `ru`, по умолчанию `en`. |
 | `POSTGRES_USER` | Docker | Пользователь PostgreSQL для compose. |
 | `POSTGRES_DB` | Docker | База PostgreSQL для compose. |
 | `POSTGRES_PASSWORD` | Docker | Пароль PostgreSQL для compose; должен быть задан явно. |
@@ -95,6 +96,9 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 
 ```text
 !help
+!lang
+!lang en
+!lang ru
 !register
 !status
 !bot add <alias> <token>
@@ -121,6 +125,13 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 !user unblock <username-or-user_id>
 !user list [pending|approved|blocked]
 ```
+
+### Мультиязычность
+
+Команды и их аргументы всегда пишутся на английском: `!help`, `!register`, `!send`,
+`!channel`, `!bot`, `!user`, `!lang`. Язык ответов бота можно посмотреть и изменить
+командой `!lang [en|ru]`. Настройка языка хранится по Mattermost `user_id` и работает
+даже до `!register`.
 
 ### Администраторы из MM_ADMINS
 
