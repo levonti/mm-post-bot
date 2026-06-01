@@ -249,17 +249,24 @@ async def test_register_notification_failures_do_not_block_registration(ctx: Com
     assert ctx.manager_mm.posts == []
 
 
-async def test_admin_registers_as_approved(ctx: CommandFixture):
+async def test_admin_registers_as_approved_with_bootstrap_message(ctx: CommandFixture):
     reply = await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!register")
+
     assert reply is not None
-    assert "approved" in reply.lower()
+    assert "Registered admin as admin" in reply
+    assert "approved automatically" in reply
+    assert "MM_ADMINS" in reply
     assert ctx.users.get("admin-id").role == "admin"
+    assert ctx.users.get("admin-id").status == "approved"
+    assert ctx.manager_mm.posts == []
 
 
 async def test_admin_registers_as_approved_with_mention_style_username(ctx: CommandFixture):
     reply = await dispatch(ctx.make("admin-id", "@admin", admin_usernames={"admin"}), "!register")
+
     assert reply is not None
-    assert "approved" in reply.lower()
+    assert "Registered admin as admin" in reply
+    assert "approved automatically" in reply
     assert ctx.users.get("admin-id").username == "admin"
     assert ctx.users.get("admin-id").role == "admin"
 
