@@ -9,6 +9,7 @@ from .commands.access import require_approved_user
 from .commands.context import CommandContext
 from .config import Settings
 from .db import DbConn
+from .i18n import FALLBACK_LOCALE, normalize_locale
 from .mm_client import MattermostClient
 from .repository import (
     AuditRepo,
@@ -16,6 +17,7 @@ from .repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPreferenceRepo,
     UserRepo,
 )
 from .security import hash_message
@@ -75,12 +77,17 @@ class CommandContextFactory:
         self._manager_user_id = manager_user_id
 
     def from_post(self, post: Mapping[str, Any], channel_type: str | None) -> CommandContext:
+        caller_user_id = str(post.get("user_id") or "")
+        user_preference_repo = UserPreferenceRepo(self._conn)
+        default_locale = normalize_locale(self._settings.default_locale) or FALLBACK_LOCALE
+        locale = user_preference_repo.get_locale(caller_user_id) or default_locale
         return CommandContext(
-            caller_user_id=str(post.get("user_id") or ""),
+            caller_user_id=caller_user_id,
             caller_username=_post_username(post),
             channel_id=str(post.get("channel_id") or ""),
             channel_type=channel_type,
             user_repo=UserRepo(self._conn),
+            user_preference_repo=user_preference_repo,
             user_bot_repo=UserBotRepo(self._conn),
             user_channel_repo=UserChannelRepo(self._conn),
             draft_capture_repo=DraftCaptureRepo(self._conn),
@@ -93,6 +100,8 @@ class CommandContextFactory:
             mm_url=str(self._settings.mm_url).rstrip("/"),
             token_encryption_key=self._settings.token_encryption_key,
             mm_verify_ssl=self._settings.mm_verify_ssl,
+            default_locale=default_locale,
+            locale=locale,
         )
 
 

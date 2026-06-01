@@ -32,6 +32,11 @@ class _UserRepo:
         return SimpleNamespace(status=self.status)
 
 
+class _PreferenceConn:
+    def execute(self, sql: str, params: Any = ()) -> SimpleNamespace:
+        return SimpleNamespace(fetchone=lambda: None)
+
+
 class _DraftCaptureRepo:
     def __init__(self, active: bool) -> None:
         self.active = active
@@ -62,13 +67,19 @@ class _PostDraftRepo:
         return SimpleNamespace(id=42)
 
 
-def _draft_body_ctx(*, user_status: str | None = "approved", active_capture: bool = True):
+def _draft_body_ctx(
+    *,
+    user_status: str | None = "approved",
+    active_capture: bool = True,
+    locale: str = "en",
+):
     return CommandContext(
         caller_user_id="alice-id",
         caller_username="alice",
         channel_id="dm-channel",
         channel_type="D",
         user_repo=cast(Any, _UserRepo(user_status)),
+        user_preference_repo=cast(Any, object()),
         user_bot_repo=cast(Any, object()),
         user_channel_repo=cast(Any, object()),
         draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
@@ -81,6 +92,8 @@ def _draft_body_ctx(*, user_status: str | None = "approved", active_capture: boo
         mm_url="https://mm.internal",
         token_encryption_key="key",
         mm_verify_ssl=True,
+        default_locale="en",
+        locale=locale,
     )
 
 
@@ -126,7 +139,7 @@ def test_context_factory_normalizes_sender_name_username():
         token_encryption_key=VALID_FERNET_KEY,
     )
     factory = CommandContextFactory(
-        conn=cast(Any, object()),
+        conn=cast(Any, _PreferenceConn()),
         settings=settings,
         manager_mm=cast(Any, object()),
         manager_user_id="mgr",

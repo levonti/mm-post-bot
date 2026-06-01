@@ -7,7 +7,9 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from mm_post_bot.commands import CommandContext, dispatch
+from mm_post_bot.config import Settings
 from mm_post_bot.db import DbConn, connect_postgres, init_schema
+from mm_post_bot.dispatcher import CommandContextFactory
 from mm_post_bot.mm_client import MattermostClient, MattermostError
 from mm_post_bot.repository import (
     AuditRepo,
@@ -15,6 +17,7 @@ from mm_post_bot.repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPreferenceRepo,
     UserRepo,
 )
 from mm_post_bot.security import hash_message
@@ -122,6 +125,7 @@ FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 class CommandFixture:
     conn: DbConn
     users: UserRepo
+    user_preferences: UserPreferenceRepo
     user_bots: UserBotRepo
     user_channels: UserChannelRepo
     draft_captures: DraftCaptureRepo
@@ -147,6 +151,7 @@ class CommandFixture:
             channel_id="dm-channel",
             channel_type=channel_type,
             user_repo=self.users,
+            user_preference_repo=self.user_preferences,
             user_bot_repo=self.user_bots,
             user_channel_repo=self.user_channels,
             draft_capture_repo=self.draft_captures,
@@ -159,6 +164,8 @@ class CommandFixture:
             mm_url="https://mm.internal",
             token_encryption_key=FERNET_KEY,
             mm_verify_ssl=True,
+            default_locale="en",
+            locale=self.user_preferences.get_locale(caller_user_id) or "en",
         )
 
 
@@ -189,6 +196,7 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     yield CommandFixture(
         conn=pg_conn,
         users=users,
+        user_preferences=UserPreferenceRepo(pg_conn),
         user_bots=UserBotRepo(pg_conn),
         user_channels=UserChannelRepo(pg_conn),
         draft_captures=DraftCaptureRepo(pg_conn),
@@ -205,6 +213,55 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     TOKEN_POST_RESULTS.clear()
     CREATED_POSTS.clear()
     pg_conn.execute("ROLLBACK")
+
+
+def test_context_factory_uses_default_locale_without_preference(pg_conn: DbConn):
+    settings = Settings(
+        mm_url="https://mm.internal/i",
+        mm_bot_token="manager-token",
+        mm_admins="levonti",
+        db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+        token_encryption_key=FERNET_KEY,
+        default_locale="ru",
+    )
+    factory = CommandContextFactory(
+        conn=pg_conn,
+        settings=settings,
+        manager_mm=cast(MattermostClient, FakeMM()),
+        manager_user_id="mgr",
+    )
+
+    ctx = factory.from_post({"user_id": "u-locale-default", "sender_name": "alice"}, "D")
+
+    assert ctx.locale == "ru"
+    assert ctx.default_locale == "ru"
+
+
+def test_context_factory_uses_stored_user_locale(pg_conn: DbConn):
+    pg_conn.execute("BEGIN")
+    try:
+        UserPreferenceRepo(pg_conn).set_locale("u-locale-stored", "ru")
+        settings = Settings(
+            mm_url="https://mm.internal/i",
+            mm_bot_token="manager-token",
+            mm_admins="levonti",
+            db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+            token_encryption_key=FERNET_KEY,
+            default_locale="en",
+        )
+        factory = CommandContextFactory(
+            conn=pg_conn,
+            settings=settings,
+            manager_mm=cast(MattermostClient, FakeMM()),
+            manager_user_id="mgr",
+        )
+
+        ctx = factory.from_post({"user_id": "u-locale-stored", "sender_name": "alice"}, "D")
+
+        assert ctx.locale == "ru"
+        assert ctx.t("lang.changed.ru") == "Язык изменён на русский."
+    finally:
+        pg_conn.execute("ROLLBACK")
 
 
 async def test_register_creates_pending_user(ctx: CommandFixture):
