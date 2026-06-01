@@ -24,7 +24,8 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 [
                     "You are configured as an admin in MM_ADMINS.",
                     "You can approve registration requests now.",
-                    "Run !register to activate your local admin account and enable posting commands.",
+                    "Run !register to activate your local admin account and enable "
+                    "posting commands.",
                 ],
             )
         )
