@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from importlib.util import find_spec
@@ -498,6 +499,24 @@ async def test_lang_command_name_stays_english_only(ctx: CommandFixture):
 
     assert reply == "Unknown command: язык"
     assert ctx.user_preferences.get_locale("alice-id") is None
+
+
+async def test_dispatcher_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    missing_bang = await dispatch(ctx.make("alice-id", "alice"), "help")
+    unknown = await dispatch(ctx.make("alice-id", "alice"), "!unknown")
+
+    assert missing_bang == "Все команды должны начинаться с !."
+    assert unknown == "Неизвестная команда: unknown"
+
+
+async def test_access_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot list")
+
+    assert reply == "Вы ещё не зарегистрированы. Выполните !register, чтобы запросить доступ."
 
 
 async def test_help_shows_admin_bootstrap_for_unregistered_configured_admin(

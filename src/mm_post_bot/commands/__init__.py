@@ -45,12 +45,12 @@ def _match_handler(parsed: ParsedArgs) -> tuple[Handler, ParsedArgs] | None:
 
 async def dispatch(ctx: CommandContext, raw_text: str) -> str | None:
     if not raw_text.lstrip().startswith("!"):
-        return "All commands must start with !."
+        return ctx.t("command.must_start")
 
     try:
         parsed = parse_command(raw_text)
     except ValueError as exc:
-        return f"Could not parse command: {exc}"
+        return ctx.t("command.parse_error", error=str(exc))
 
     if not parsed.command:
         parsed = replace(parsed, command="help")
@@ -59,7 +59,7 @@ async def dispatch(ctx: CommandContext, raw_text: str) -> str | None:
     if matched is not None:
         handler, args = matched
         return await handler(ctx, args)
-    return f"Unknown command: {parsed.command}"
+    return ctx.t("command.unknown", command=parsed.command)
 
 
 __all__ = ["CommandContext", "dispatch", "parse_command"]

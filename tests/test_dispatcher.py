@@ -192,6 +192,16 @@ async def test_handle_draft_body_saves_active_capture():
     assert cast(_DraftCaptureRepo, ctx.draft_capture_repo).cleared == ["alice-id"]
 
 
+async def test_handle_draft_body_uses_selected_locale():
+    ctx = _draft_body_ctx(locale="ru")
+
+    response = await handle_draft_body(ctx, "текст черновика")
+
+    assert response is not None
+    assert response.startswith("Черновик #42 сохранён.")
+    assert "!send 42 --bot <alias> --channel <channel_alias>" in response
+
+
 async def test_handle_draft_body_ignores_dm_without_active_capture():
     ctx = _draft_body_ctx(active_capture=False)
 
