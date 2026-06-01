@@ -1,5 +1,6 @@
 from mm_post_bot.repository import AppUser
 
+from ..i18n import recipient_locale, translate
 from .context import CommandContext
 from .parser import ParsedArgs
 
@@ -13,7 +14,7 @@ def _is_admin(ctx: CommandContext) -> bool:
 def _require_admin(ctx: CommandContext) -> str | None:
     if _is_admin(ctx):
         return None
-    return "Only admins can use this command."
+    return ctx.t("user.admin_only")
 
 
 def _resolve_user(ctx: CommandContext, target: str) -> AppUser | None:
@@ -42,15 +43,15 @@ async def approve(ctx: CommandContext, args: ParsedArgs) -> str:
 
     target = _target_arg(args)
     if target is None:
-        return "Usage: !user approve <username|user_id>"
+        return ctx.t("user.approve_usage")
 
     user = _resolve_user(ctx, target)
     if user is None:
-        return f"Could not find user {target}."
+        return ctx.t("user.not_found", target=target)
 
     approved = ctx.user_repo.approve(user.user_id, approved_by=ctx.caller_user_id)
-    await _notify_user_status(ctx, approved, message="Your mm-post-bot access has been approved.")
-    return f"Approved {approved.username} ({approved.user_id})."
+    await _notify_user_status(ctx, approved, message_key="user.notify_approved")
+    return ctx.t("user.approved", username=approved.username, user_id=approved.user_id)
 
 
 async def block(ctx: CommandContext, args: ParsedArgs) -> str:
@@ -60,17 +61,17 @@ async def block(ctx: CommandContext, args: ParsedArgs) -> str:
 
     target = _target_arg(args)
     if target is None:
-        return "Usage: !user block <username|user_id>"
+        return ctx.t("user.block_usage")
 
     user = _resolve_user(ctx, target)
     if user is None:
-        return f"Could not find user {target}."
+        return ctx.t("user.not_found", target=target)
     if user.username.lstrip("@") in ctx.admin_usernames:
-        return "Configured admins cannot be blocked."
+        return ctx.t("user.configured_admin_block")
 
     blocked = ctx.user_repo.block(user.user_id, blocked_by=ctx.caller_user_id)
-    await _notify_user_status(ctx, blocked, message="Your mm-post-bot access has been blocked.")
-    return f"Blocked {blocked.username} ({blocked.user_id})."
+    await _notify_user_status(ctx, blocked, message_key="user.notify_blocked")
+    return ctx.t("user.blocked", username=blocked.username, user_id=blocked.user_id)
 
 
 async def unblock(ctx: CommandContext, args: ParsedArgs) -> str:
@@ -80,19 +81,15 @@ async def unblock(ctx: CommandContext, args: ParsedArgs) -> str:
 
     target = _target_arg(args)
     if target is None:
-        return "Usage: !user unblock <username|user_id>"
+        return ctx.t("user.unblock_usage")
 
     user = _resolve_user(ctx, target)
     if user is None:
-        return f"Could not find user {target}."
+        return ctx.t("user.not_found", target=target)
 
     approved = ctx.user_repo.unblock(user.user_id, approved_by=ctx.caller_user_id)
-    await _notify_user_status(
-        ctx,
-        approved,
-        message="Your mm-post-bot access has been unblocked and approved.",
-    )
-    return f"Unblocked and approved {approved.username} ({approved.user_id})."
+    await _notify_user_status(ctx, approved, message_key="user.notify_unblocked")
+    return ctx.t("user.unblocked", username=approved.username, user_id=approved.user_id)
 
 
 async def list_users(ctx: CommandContext, args: ParsedArgs) -> str:
@@ -102,23 +99,29 @@ async def list_users(ctx: CommandContext, args: ParsedArgs) -> str:
 
     status = args.positional[0] if args.positional else None
     if status is not None and status not in VALID_STATUSES:
-        return "Status must be one of: pending, approved, blocked."
+        return ctx.t("user.invalid_status")
 
     users = ctx.user_repo.list_by_status(status)
     if not users:
-        suffix = f" with status {status}" if status is not None else ""
-        return f"No users{suffix}."
+        suffix = ctx.t("user.list_empty_suffix", status=status) if status is not None else ""
+        return ctx.t("user.list_empty", suffix=suffix)
 
     rows = [f"{user.username} ({user.user_id}) - {user.role}, {user.status}" for user in users]
     return "\n".join(rows)
 
 
-async def _notify_user_status(ctx: CommandContext, user: AppUser, *, message: str) -> None:
+async def _notify_user_status(ctx: CommandContext, user: AppUser, *, message_key: str) -> None:
     try:
         channel = await ctx.manager_mm.create_direct_channel(ctx.manager_user_id, user.user_id)
         channel_id = _string_field(channel, "id")
         if channel_id is None:
             return
+        locale = recipient_locale(
+            ctx.user_preference_repo,
+            user.user_id,
+            default_locale=ctx.default_locale,
+        )
+        message = translate(locale, message_key)
         await ctx.manager_mm.create_post(channel_id, message)
     except Exception:
         return

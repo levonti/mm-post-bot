@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from importlib.util import find_spec
@@ -7,7 +8,9 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from mm_post_bot.commands import CommandContext, dispatch
+from mm_post_bot.config import Settings
 from mm_post_bot.db import DbConn, connect_postgres, init_schema
+from mm_post_bot.dispatcher import CommandContextFactory
 from mm_post_bot.mm_client import MattermostClient, MattermostError
 from mm_post_bot.repository import (
     AuditRepo,
@@ -15,6 +18,7 @@ from mm_post_bot.repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPreferenceRepo,
     UserRepo,
 )
 from mm_post_bot.security import hash_message
@@ -122,6 +126,7 @@ FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 class CommandFixture:
     conn: DbConn
     users: UserRepo
+    user_preferences: UserPreferenceRepo
     user_bots: UserBotRepo
     user_channels: UserChannelRepo
     draft_captures: DraftCaptureRepo
@@ -147,6 +152,7 @@ class CommandFixture:
             channel_id="dm-channel",
             channel_type=channel_type,
             user_repo=self.users,
+            user_preference_repo=self.user_preferences,
             user_bot_repo=self.user_bots,
             user_channel_repo=self.user_channels,
             draft_capture_repo=self.draft_captures,
@@ -159,6 +165,8 @@ class CommandFixture:
             mm_url="https://mm.internal",
             token_encryption_key=FERNET_KEY,
             mm_verify_ssl=True,
+            default_locale="en",
+            locale=self.user_preferences.get_locale(caller_user_id) or "en",
         )
 
 
@@ -189,6 +197,7 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     yield CommandFixture(
         conn=pg_conn,
         users=users,
+        user_preferences=UserPreferenceRepo(pg_conn),
         user_bots=UserBotRepo(pg_conn),
         user_channels=UserChannelRepo(pg_conn),
         draft_captures=DraftCaptureRepo(pg_conn),
@@ -207,11 +216,70 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     pg_conn.execute("ROLLBACK")
 
 
+def test_context_factory_uses_default_locale_without_preference(pg_conn: DbConn):
+    settings = Settings(
+        mm_url="https://mm.internal",
+        mm_bot_token="manager-token",
+        mm_admins="levonti",
+        db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+        token_encryption_key=FERNET_KEY,
+        default_locale="ru",
+    )
+    factory = CommandContextFactory(
+        conn=pg_conn,
+        settings=settings,
+        manager_mm=cast(MattermostClient, FakeMM()),
+        manager_user_id="mgr",
+    )
+
+    ctx = factory.from_post({"user_id": "u-locale-default", "sender_name": "alice"}, "D")
+
+    assert ctx.locale == "ru"
+    assert ctx.default_locale == "ru"
+
+
+def test_context_factory_uses_stored_user_locale(pg_conn: DbConn):
+    pg_conn.execute("BEGIN")
+    try:
+        UserPreferenceRepo(pg_conn).set_locale("u-locale-stored", "ru")
+        settings = Settings(
+            mm_url="https://mm.internal",
+            mm_bot_token="manager-token",
+            mm_admins="levonti",
+            db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
+            token_encryption_key=FERNET_KEY,
+            default_locale="en",
+        )
+        factory = CommandContextFactory(
+            conn=pg_conn,
+            settings=settings,
+            manager_mm=cast(MattermostClient, FakeMM()),
+            manager_user_id="mgr",
+        )
+
+        ctx = factory.from_post({"user_id": "u-locale-stored", "sender_name": "alice"}, "D")
+
+        assert ctx.locale == "ru"
+        assert ctx.t("lang.changed.ru") == "Язык изменён на русский."
+    finally:
+        pg_conn.execute("ROLLBACK")
+
+
 async def test_register_creates_pending_user(ctx: CommandFixture):
     reply = await dispatch(ctx.make("alice-id", "alice"), "!register")
     assert reply is not None
     assert "pending" in reply.lower()
     assert ctx.users.get("alice-id").status == "pending"
+
+
+async def test_register_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    assert reply is not None
+    assert "Пользователь alice зарегистрирован как user" in reply
+    assert "Текущий статус: pending" in reply
 
 
 async def test_register_notifies_configured_admins(ctx: CommandFixture):
@@ -230,6 +298,22 @@ async def test_register_notifies_configured_admins(ctx: CommandFixture):
             "channel_id": "dm-manager-id-admin-id",
             "message": (
                 "New registration request from alice (alice-id).\nApprove with: !user approve alice"
+            ),
+        }
+    ]
+
+
+async def test_registration_request_notification_uses_admin_locale(ctx: CommandFixture):
+    ctx.manager_mm.users_by_username["admin"] = {"id": "admin-id", "username": "admin"}
+    await dispatch(ctx.make("admin-id", "admin", admin_usernames={"admin"}), "!lang ru")
+
+    await dispatch(ctx.make("alice-id", "alice", admin_usernames={"admin"}), "!register")
+
+    assert ctx.manager_mm.posts == [
+        {
+            "channel_id": "dm-manager-id-admin-id",
+            "message": (
+                "Новая заявка на регистрацию от alice (alice-id).\nПодтвердить: !user approve alice"
             ),
         }
     ]
@@ -391,6 +475,15 @@ async def test_status_reports_unknown_pending_approved_and_blocked(ctx: CommandF
     assert "blocked" in blocked.lower()
 
 
+async def test_status_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!status")
+
+    assert reply == "alice: статус pending, роль user."
+
+
 async def test_admin_lists_pending_users(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     await dispatch(ctx.make("bob-id", "bob"), "!register")
@@ -415,6 +508,50 @@ async def test_user_list_requires_admin(ctx: CommandFixture):
 async def test_non_bang_help_returns_prefix_message(ctx: CommandFixture):
     reply = await dispatch(ctx.make("alice-id", "alice"), "help")
     assert reply == "All commands must start with !."
+
+
+async def test_lang_shows_current_language_before_registration(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!lang")
+
+    assert reply == "Current language: en. Supported languages: en, ru."
+
+
+async def test_lang_changes_language_before_registration(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    assert reply == "Язык изменён на русский."
+    assert ctx.user_preferences.get_locale("alice-id") == "ru"
+
+
+async def test_lang_rejects_unknown_locale(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!lang fr")
+
+    assert reply == "Unsupported language: fr. Supported languages: en, ru."
+
+
+async def test_lang_command_name_stays_english_only(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!язык ru")
+
+    assert reply == "Unknown command: язык"
+    assert ctx.user_preferences.get_locale("alice-id") is None
+
+
+async def test_dispatcher_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    missing_bang = await dispatch(ctx.make("alice-id", "alice"), "help")
+    unknown = await dispatch(ctx.make("alice-id", "alice"), "!unknown")
+
+    assert missing_bang == "Все команды должны начинаться с !."
+    assert unknown == "Неизвестная команда: unknown"
+
+
+async def test_access_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot list")
+
+    assert reply == "Вы ещё не зарегистрированы. Выполните !register, чтобы запросить доступ."
 
 
 async def test_help_shows_admin_bootstrap_for_unregistered_configured_admin(
@@ -489,6 +626,41 @@ async def test_help_shows_admin_commands_for_mention_style_admin(ctx: CommandFix
     assert reply is not None
     assert "!bot add" in reply
     assert "!user approve" in reply
+
+
+async def test_help_mentions_lang_command(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!help")
+
+    assert reply is not None
+    assert "!lang [en|ru]" in reply
+
+
+async def test_help_uses_selected_locale_but_keeps_commands_english(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!help")
+
+    assert reply is not None
+    assert "Основное:" in reply
+    assert "!register - запросить доступ к постингу" in reply
+    assert "!lang [en|ru]" in reply
+
+
+async def test_user_status_notification_uses_target_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice", admin_usernames={"admin"}), "!register")
+
+    reply = await dispatch(
+        ctx.make("admin-id", "admin", admin_usernames={"admin"}),
+        "!user approve alice",
+    )
+
+    assert reply is not None
+    assert "Approved alice" in reply
+    assert ctx.manager_mm.posts[-1] == {
+        "channel_id": "dm-manager-id-alice-id",
+        "message": "Ваш доступ к mm-post-bot подтверждён.",
+    }
 
 
 async def test_bot_add_requires_approved_user(ctx: CommandFixture):
@@ -667,6 +839,18 @@ async def test_draft_commands_reject_blocked_user(ctx: CommandFixture, command: 
     assert "blocked" in reply.lower()
 
 
+async def test_draft_flow_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    started = await dispatch(ctx.make("alice-id", "alice"), "!draft")
+    cancelled = await dispatch(ctx.make("alice-id", "alice"), "!draft cancel")
+
+    assert started == "Ожидание черновика включено. Отправьте текст поста в этом direct message."
+    assert cancelled == "Ожидание черновика отменено."
+
+
 async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
@@ -682,6 +866,21 @@ async def test_bot_add_rejects_non_bot_token(ctx: CommandFixture):
     assert "bot token" in reply.lower()
     with pytest.raises(LookupError):
         ctx.user_bots.get_by_owner_and_alias("alice-id", "personal")
+
+
+async def test_bot_validation_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["human-token"] = {
+        "id": "human-id",
+        "username": "alice",
+        "is_bot": False,
+    }
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!bot add personal human-token")
+
+    assert reply == "Этот token принадлежит обычному пользователю. Укажите token бота."
 
 
 async def test_bot_add_rejects_missing_bot_flag(ctx: CommandFixture):
@@ -791,6 +990,19 @@ async def test_channel_add_rejects_duplicate_alias_and_links(ctx: CommandFixture
     assert link is not None
     assert "channel id" in link.lower()
     assert "link" in link.lower()
+
+
+async def test_channel_errors_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!channel add town https://mm.internal/team/channels/town",
+    )
+
+    assert reply == "Укажите Mattermost channel id, а не ссылку на канал."
 
 
 @pytest.mark.parametrize(
@@ -911,6 +1123,31 @@ async def test_send_posts_saved_draft(ctx: CommandFixture):
     assert audits[0].mattermost_post_id == "post-1"
     assert audits[0].error_code is None
     assert audits[0].error_message is None
+
+
+async def test_send_success_uses_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "poster",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Привет",
+        message_sha256=hash_message("Привет"),
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel town",
+    )
+
+    assert reply == f"Черновик #{draft.id} опубликован."
 
 
 async def test_send_rejects_foreign_draft(ctx: CommandFixture):

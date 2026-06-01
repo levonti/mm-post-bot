@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
-from . import bot, channel, draft, register, send, status, user_admin
+from . import bot, channel, draft, lang, register, send, status, user_admin
 from . import help as help_cmd
 from .context import CommandContext
 from .parser import ParsedArgs, parse_command
@@ -10,6 +10,7 @@ Handler = Callable[[CommandContext, ParsedArgs], Awaitable[str]]
 
 REGISTRY: dict[tuple[str, ...], Handler] = {
     ("help",): help_cmd.handle,
+    ("lang",): lang.handle,
     ("register",): register.handle,
     ("status",): status.handle,
     ("send",): send.handle,
@@ -44,12 +45,12 @@ def _match_handler(parsed: ParsedArgs) -> tuple[Handler, ParsedArgs] | None:
 
 async def dispatch(ctx: CommandContext, raw_text: str) -> str | None:
     if not raw_text.lstrip().startswith("!"):
-        return "All commands must start with !."
+        return ctx.t("command.must_start")
 
     try:
         parsed = parse_command(raw_text)
     except ValueError as exc:
-        return f"Could not parse command: {exc}"
+        return ctx.t("command.parse_error", error=str(exc))
 
     if not parsed.command:
         parsed = replace(parsed, command="help")
@@ -58,7 +59,7 @@ async def dispatch(ctx: CommandContext, raw_text: str) -> str | None:
     if matched is not None:
         handler, args = matched
         return await handler(ctx, args)
-    return f"Unknown command: {parsed.command}"
+    return ctx.t("command.unknown", command=parsed.command)
 
 
 __all__ = ["CommandContext", "dispatch", "parse_command"]

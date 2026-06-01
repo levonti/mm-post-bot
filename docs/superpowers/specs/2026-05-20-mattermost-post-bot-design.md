@@ -353,7 +353,7 @@ Database tests:
 - Repository tests using SQLite-compatible behavior if retained for local tests.
 - PostgreSQL 15 integration tests for schema, indexes, constraints, and transactions.
 
-Manual MVP test against `https://mm.internal/i`:
+Manual MVP test against `https://mm.internal`:
 
 1. Configure `MM_URL`, `MM_BOT_TOKEN`, `MM_ADMINS`, `DB_URL`, and `TOKEN_ENCRYPTION_KEY`.
 2. Start PostgreSQL 15 and the bot service.

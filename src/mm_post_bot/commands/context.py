@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from typing import Any
 
+from ..i18n import translate
 from ..mm_client import MattermostClient
 from ..repository import (
     AuditRepo,
@@ -7,6 +9,7 @@ from ..repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPreferenceRepo,
     UserRepo,
 )
 
@@ -18,6 +21,7 @@ class CommandContext:
     channel_id: str
     channel_type: str | None
     user_repo: UserRepo
+    user_preference_repo: UserPreferenceRepo
     user_bot_repo: UserBotRepo
     user_channel_repo: UserChannelRepo
     draft_capture_repo: DraftCaptureRepo
@@ -30,3 +34,8 @@ class CommandContext:
     mm_url: str
     token_encryption_key: str
     mm_verify_ssl: bool
+    default_locale: str
+    locale: str
+
+    def t(self, key: str, **params: Any) -> str:
+        return translate(self.locale, key, **params)

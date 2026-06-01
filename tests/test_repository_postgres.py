@@ -11,6 +11,7 @@ from mm_post_bot.repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPreferenceRepo,
     UserRepo,
 )
 
@@ -76,6 +77,36 @@ def test_get_by_username_and_list_by_status(repos):
     assert [user.username for user in users.list_by_status()] == ["alice", "bob", "charlie"]
     assert [user.username for user in users.list_by_status("pending")] == ["alice", "charlie"]
     assert [user.username for user in users.list_by_status("approved")] == ["bob"]
+
+
+def test_user_preference_locale_round_trip_without_registration(pg_conn):
+    pg_conn.execute("BEGIN")
+    preferences = UserPreferenceRepo(pg_conn)
+
+    try:
+        assert preferences.get_locale("new-user-id") is None
+
+        preference = preferences.set_locale("new-user-id", "ru")
+
+        assert preference.user_id == "new-user-id"
+        assert preference.locale == "ru"
+        assert preferences.get_locale("new-user-id") == "ru"
+    finally:
+        pg_conn.execute("ROLLBACK")
+
+
+def test_user_preference_locale_update(pg_conn):
+    pg_conn.execute("BEGIN")
+    preferences = UserPreferenceRepo(pg_conn)
+
+    try:
+        preferences.set_locale("user-id", "ru")
+        updated = preferences.set_locale("user-id", "en")
+
+        assert updated.locale == "en"
+        assert preferences.get_locale("user-id") == "en"
+    finally:
+        pg_conn.execute("ROLLBACK")
 
 
 def test_user_bot_alias_is_owner_scoped(repos):
@@ -306,7 +337,7 @@ def test_audit_success_row(repos):
         user_bot_id=bot.id,
         bot_user_id="bot-1",
         bot_username="news-bot",
-        channel_link="https://mm.internal/i/team/channels/town-square",
+        channel_link="https://mm.internal/team/channels/town-square",
         resolved_channel_id="channel-id",
         resolved_team_name="team",
         resolved_channel_name="town-square",

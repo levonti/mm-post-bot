@@ -32,6 +32,11 @@ class _UserRepo:
         return SimpleNamespace(status=self.status)
 
 
+class _PreferenceConn:
+    def execute(self, sql: str, params: Any = ()) -> SimpleNamespace:
+        return SimpleNamespace(fetchone=lambda: None)
+
+
 class _DraftCaptureRepo:
     def __init__(self, active: bool) -> None:
         self.active = active
@@ -62,13 +67,19 @@ class _PostDraftRepo:
         return SimpleNamespace(id=42)
 
 
-def _draft_body_ctx(*, user_status: str | None = "approved", active_capture: bool = True):
+def _draft_body_ctx(
+    *,
+    user_status: str | None = "approved",
+    active_capture: bool = True,
+    locale: str = "en",
+):
     return CommandContext(
         caller_user_id="alice-id",
         caller_username="alice",
         channel_id="dm-channel",
         channel_type="D",
         user_repo=cast(Any, _UserRepo(user_status)),
+        user_preference_repo=cast(Any, object()),
         user_bot_repo=cast(Any, object()),
         user_channel_repo=cast(Any, object()),
         draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
@@ -81,6 +92,8 @@ def _draft_body_ctx(*, user_status: str | None = "approved", active_capture: boo
         mm_url="https://mm.internal",
         token_encryption_key="key",
         mm_verify_ssl=True,
+        default_locale="en",
+        locale=locale,
     )
 
 
@@ -119,14 +132,14 @@ def test_draft_body_only_in_dm():
 
 def test_context_factory_normalizes_sender_name_username():
     settings = Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
         token_encryption_key=VALID_FERNET_KEY,
     )
     factory = CommandContextFactory(
-        conn=cast(Any, object()),
+        conn=cast(Any, _PreferenceConn()),
         settings=settings,
         manager_mm=cast(Any, object()),
         manager_user_id="mgr",
@@ -155,7 +168,7 @@ async def test_malformed_post_json_is_ignored():
 
 
 async def test_dispatch_returns_parse_error_for_malformed_shell_syntax():
-    response = await dispatch(cast(CommandContext, object()), '!help "unterminated')
+    response = await dispatch(_draft_body_ctx(), '!help "unterminated')
 
     assert response == "Could not parse command: No closing quotation"
 
@@ -177,6 +190,16 @@ async def test_handle_draft_body_saves_active_capture():
         }
     ]
     assert cast(_DraftCaptureRepo, ctx.draft_capture_repo).cleared == ["alice-id"]
+
+
+async def test_handle_draft_body_uses_selected_locale():
+    ctx = _draft_body_ctx(locale="ru")
+
+    response = await handle_draft_body(ctx, "текст черновика")
+
+    assert response is not None
+    assert response.startswith("Черновик #42 сохранён.")
+    assert "!send 42 --bot <alias> --channel <channel_alias>" in response
 
 
 async def test_handle_draft_body_ignores_dm_without_active_capture():

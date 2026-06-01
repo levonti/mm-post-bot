@@ -15,6 +15,9 @@ class FakeConn:
     def __init__(self) -> None:
         self.closed = False
 
+    def execute(self, sql: str, params: Any = ()) -> Any:
+        return type("FakeCursor", (), {"fetchone": lambda self: None})()
+
     def close(self) -> None:
         self.closed = True
 
@@ -44,7 +47,7 @@ class FakeMattermostClient:
 
 def _settings() -> Settings:
     return Settings(
-        mm_url="https://mm.internal/i",
+        mm_url="https://mm.internal",
         mm_bot_token="manager-token",
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
@@ -101,7 +104,7 @@ async def test_main_bootstraps_runtime_and_closes_resources(monkeypatch):
         ("listen", "postgresql://mm_post:secret@postgres/mm_post_bot"),
         ("handle", "posted", None, "manager-id"),
     ]
-    assert FakeMattermostClient.instances[0].rest_base == "https://mm.internal/i/api/v4"
+    assert FakeMattermostClient.instances[0].rest_base == "https://mm.internal/api/v4"
     assert FakeMattermostClient.instances[0].token == "manager-token"
     assert FakeMattermostClient.instances[0].verify_ssl is False
     assert FakeMattermostClient.instances[0].closed is True

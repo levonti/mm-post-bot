@@ -13,7 +13,6 @@ from .access import require_approved_user
 from .context import CommandContext
 from .parser import ParsedArgs
 
-USAGE = "Usage: !send <draft_id> --bot <alias> --channel <channel_alias>"
 # Keep locks for the process lifetime so a draft lock is never replaced while waiters exist.
 _SEND_LOCKS: dict[tuple[str, int], asyncio.Lock] = {}
 _SEND_LOCKS_GUARD = asyncio.Lock()
@@ -26,7 +25,7 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
 
     parsed = _parse_args(args)
     if parsed is None:
-        return USAGE
+        return ctx.t("send.usage")
 
     draft_id, bot_alias, channel_alias = parsed
     async with _send_lock(ctx.caller_user_id, draft_id):
@@ -42,15 +41,15 @@ async def _send_locked(
     try:
         draft = ctx.post_draft_repo.get_for_owner(ctx.caller_user_id, draft_id)
     except LookupError:
-        return "Draft not found or unavailable."
+        return ctx.t("send.draft_unavailable")
 
     if draft.status != "draft":
-        return "Draft not found or unavailable."
+        return ctx.t("send.draft_unavailable")
 
     try:
         bot = ctx.user_bot_repo.get_by_owner_and_alias(ctx.caller_user_id, bot_alias)
     except LookupError:
-        return "Could not find that bot."
+        return ctx.t("send.bot_not_found")
 
     try:
         channel = ctx.user_channel_repo.get_by_owner_and_alias(ctx.caller_user_id, channel_alias)
@@ -64,7 +63,7 @@ async def _send_locked(
             error_code="channel_alias",
             error_message="Unknown channel alias.",
         )
-        return "Could not find that channel alias."
+        return ctx.t("send.channel_not_found")
 
     try:
         token = decrypt_token(bot.token_ciphertext, ctx.token_encryption_key)
@@ -78,7 +77,7 @@ async def _send_locked(
             error_code="token_decrypt",
             error_message="Bot token storage is misconfigured.",
         )
-        return "Bot token storage is misconfigured. Please contact an administrator."
+        return ctx.t("send.storage_misconfigured")
 
     client = MattermostClient(ctx.mm_rest_base, token, verify_ssl=ctx.mm_verify_ssl)
     try:
@@ -97,7 +96,7 @@ async def _send_locked(
                 error_code="mattermost_post",
                 error_message=_safe_error_message(exc),
             )
-            return "Could not publish the post. Please check bot permissions and channel id."
+            return ctx.t("send.publish_failed")
     finally:
         await client.aclose()
 
@@ -128,11 +127,8 @@ async def _send_locked(
                 error_message=None,
             )
     except Exception:
-        return (
-            "Mattermost accepted the post, but the local status update failed. "
-            "Please contact an administrator before retrying this draft."
-        )
-    return f"Draft #{draft.id} published."
+        return ctx.t("send.local_update_failed")
+    return ctx.t("send.published", draft_id=draft.id)
 
 
 @asynccontextmanager

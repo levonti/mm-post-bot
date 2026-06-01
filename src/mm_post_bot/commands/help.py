@@ -8,11 +8,12 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
     is_configured_admin = username in ctx.admin_usernames
     sections = [
         _section(
-            "Core",
+            ctx.t("help.core.title"),
             [
-                "!help - show available commands",
-                "!register - register for posting access",
-                "!status - show your registration status",
+                ctx.t("help.core.help"),
+                ctx.t("help.core.register"),
+                ctx.t("help.core.status"),
+                ctx.t("help.core.lang"),
             ],
         )
     ]
@@ -20,34 +21,39 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
     if is_configured_admin and user_status != "approved":
         sections.append(
             _section(
-                "Admin bootstrap",
+                ctx.t("help.admin_bootstrap.title"),
                 [
-                    "You are configured as an admin in MM_ADMINS.",
-                    "You can approve registration requests now.",
-                    "Run !register to activate your local admin account and enable "
-                    "posting commands.",
+                    ctx.t("help.admin_bootstrap.configured"),
+                    ctx.t("help.admin_bootstrap.can_approve"),
+                    ctx.t("help.admin_bootstrap.register"),
                 ],
             )
         )
 
     if user_status == "pending":
-        sections.append(_section("Registration", ["Your account is pending approval."]))
+        sections.append(
+            _section(ctx.t("help.registration.title"), [ctx.t("help.registration.pending")])
+        )
     elif user_status == "blocked":
-        sections.append(_section("Registration", ["Your access is blocked. Contact an admin."]))
+        sections.append(
+            _section(ctx.t("help.registration.title"), [ctx.t("help.registration.blocked")])
+        )
     elif user_status == "approved":
-        sections.extend(_approved_user_sections())
+        sections.extend(_approved_user_sections(ctx))
     elif not is_configured_admin:
-        sections.append(_section("Registration", ["Run !register to request posting access."]))
+        sections.append(
+            _section(ctx.t("help.registration.title"), [ctx.t("help.registration.unregistered")])
+        )
 
     if is_configured_admin:
         sections.append(
             _section(
-                "Admin",
+                ctx.t("help.admin.title"),
                 [
-                    "!user approve <username|user_id> - approve a user",
-                    "!user block <username|user_id> - block a user",
-                    "!user unblock <username|user_id> - unblock and approve a user",
-                    "!user list [pending|approved|blocked] - list users",
+                    ctx.t("help.admin.approve"),
+                    ctx.t("help.admin.block"),
+                    ctx.t("help.admin.unblock"),
+                    ctx.t("help.admin.list"),
                 ],
             )
         )
@@ -55,39 +61,39 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
     return "\n\n".join(sections)
 
 
-def _approved_user_sections() -> list[str]:
+def _approved_user_sections(ctx: CommandContext) -> list[str]:
     return [
         _section(
-            "Posting bots",
+            ctx.t("help.posting_bots.title"),
             [
-                "!bot add <alias> <token> - add a posting bot token",
-                "!bot list - list your posting bots",
-                "!bot remove <alias> - remove a posting bot",
+                ctx.t("help.posting_bots.add"),
+                ctx.t("help.posting_bots.list"),
+                ctx.t("help.posting_bots.remove"),
             ],
         ),
         _section(
-            "Channels",
+            ctx.t("help.channels.title"),
             [
-                "!channel add <alias> <channel_id> - add a channel alias",
-                "!channel set <alias> <channel_id> - update a channel alias",
-                "!channel remove <alias> - remove a channel alias",
-                "!channel list - list your channel aliases",
-                "!channel show <alias> - show a channel alias",
+                ctx.t("help.channels.add"),
+                ctx.t("help.channels.set"),
+                ctx.t("help.channels.remove"),
+                ctx.t("help.channels.list"),
+                ctx.t("help.channels.show"),
             ],
         ),
         _section(
-            "Drafts",
+            ctx.t("help.drafts.title"),
             [
-                "!draft - capture your next DM as a draft",
-                "!draft cancel - cancel active draft capture",
-                "!draft list - list saved drafts",
-                "!draft show <draft_id> - show a saved draft",
-                "!draft delete <draft_id> - delete a saved draft",
+                ctx.t("help.drafts.start"),
+                ctx.t("help.drafts.cancel"),
+                ctx.t("help.drafts.list"),
+                ctx.t("help.drafts.show"),
+                ctx.t("help.drafts.delete"),
             ],
         ),
         _section(
-            "Publishing",
-            ["!send <draft_id> --bot <alias> --channel <channel_alias> - publish a draft"],
+            ctx.t("help.publishing.title"),
+            [ctx.t("help.publishing.send")],
         ),
     ]
 
