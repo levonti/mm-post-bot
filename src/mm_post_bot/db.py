@@ -17,6 +17,13 @@ CREATE TABLE IF NOT EXISTS app_user (
     blocked_by  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS user_preference (
+    user_id    TEXT PRIMARY KEY,
+    locale     TEXT NOT NULL CHECK (locale IN ('en', 'ru')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS user_bot (
     id                BIGSERIAL PRIMARY KEY,
     owner_user_id     TEXT NOT NULL REFERENCES app_user(user_id),

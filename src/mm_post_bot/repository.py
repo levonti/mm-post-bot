@@ -24,6 +24,14 @@ class AppUser:
 
 
 @dataclass(frozen=True, slots=True)
+class UserPreference:
+    user_id: str
+    locale: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class UserBot:
     id: int
     owner_user_id: str
@@ -104,6 +112,15 @@ def _user_from_row(row: Any) -> AppUser:
         approved_by=row["approved_by"],
         blocked_at=row["blocked_at"],
         blocked_by=row["blocked_by"],
+    )
+
+
+def _user_preference_from_row(row: Any) -> UserPreference:
+    return UserPreference(
+        user_id=row["user_id"],
+        locale=row["locale"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 
@@ -297,6 +314,35 @@ class UserRepo:
 
     def unblock(self, user_id: str, *, approved_by: str) -> AppUser:
         return self.approve(user_id, approved_by=approved_by)
+
+
+class UserPreferenceRepo:
+    def __init__(self, conn: DbConn) -> None:
+        self._conn = conn
+
+    def get_locale(self, user_id: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT locale FROM user_preference WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return row["locale"]
+
+    def set_locale(self, user_id: str, locale: str) -> UserPreference:
+        now = _now()
+        row = self._conn.execute(
+            """
+            INSERT INTO user_preference (user_id, locale, updated_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET
+                locale = EXCLUDED.locale,
+                updated_at = EXCLUDED.updated_at
+            RETURNING *
+            """,
+            (user_id, locale, now),
+        ).fetchone()
+        return _user_preference_from_row(row)
 
 
 class UserBotRepo:
