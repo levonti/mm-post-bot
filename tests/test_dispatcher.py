@@ -168,7 +168,7 @@ async def test_malformed_post_json_is_ignored():
 
 
 async def test_dispatch_returns_parse_error_for_malformed_shell_syntax():
-    response = await dispatch(cast(CommandContext, object()), '!help "unterminated')
+    response = await dispatch(_draft_body_ctx(), '!help "unterminated')
 
     assert response == "Could not parse command: No closing quotation"
 

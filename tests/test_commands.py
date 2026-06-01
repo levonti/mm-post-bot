@@ -313,8 +313,7 @@ async def test_registration_request_notification_uses_admin_locale(ctx: CommandF
         {
             "channel_id": "dm-manager-id-admin-id",
             "message": (
-                "Новая заявка на регистрацию от alice (alice-id).\n"
-                "Подтвердить: !user approve alice"
+                "Новая заявка на регистрацию от alice (alice-id).\nПодтвердить: !user approve alice"
             ),
         }
     ]

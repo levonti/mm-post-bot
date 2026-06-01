@@ -15,6 +15,9 @@ class FakeConn:
     def __init__(self) -> None:
         self.closed = False
 
+    def execute(self, sql: str, params: Any = ()) -> Any:
+        return type("FakeCursor", (), {"fetchone": lambda self: None})()
+
     def close(self) -> None:
         self.closed = True
 

@@ -97,8 +97,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "channel.list_usage": "Usage: !channel list",
         "channel.show_usage": "Usage: !channel show <alias>",
         "channel.duplicate": (
-            "You already have a channel named {alias}. "
-            "Use !channel set {alias} <channel_id>."
+            "You already have a channel named {alias}. Use !channel set {alias} <channel_id>."
         ),
         "channel.added": "Added channel {alias}.",
         "channel.updated": "Updated channel {alias}.",
@@ -193,8 +192,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.admin_bootstrap.configured": "Вы указаны как администратор в MM_ADMINS.",
         "help.admin_bootstrap.can_approve": "Вы уже можете подтверждать заявки на регистрацию.",
         "help.admin_bootstrap.register": (
-            "Выполните !register, чтобы активировать локальную admin-запись "
-            "и posting-команды."
+            "Выполните !register, чтобы активировать локальную admin-запись и posting-команды."
         ),
         "help.registration.title": "Регистрация",
         "help.registration.pending": "Ваша заявка ожидает подтверждения.",
@@ -248,8 +246,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "channel.list_usage": "Использование: !channel list",
         "channel.show_usage": "Использование: !channel show <alias>",
         "channel.duplicate": (
-            "У вас уже есть channel alias {alias}. "
-            "Используйте !channel set {alias} <channel_id>."
+            "У вас уже есть channel alias {alias}. Используйте !channel set {alias} <channel_id>."
         ),
         "channel.added": "Channel alias {alias} добавлен.",
         "channel.updated": "Channel alias {alias} обновлён.",

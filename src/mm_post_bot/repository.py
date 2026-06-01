@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from .db import DbConn
 
@@ -327,7 +327,7 @@ class UserPreferenceRepo:
         ).fetchone()
         if row is None:
             return None
-        return row["locale"]
+        return cast(str, row["locale"])
 
     def set_locale(self, user_id: str, locale: str) -> UserPreference:
         now = _now()
