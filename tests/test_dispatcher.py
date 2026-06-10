@@ -82,6 +82,7 @@ def _draft_body_ctx(
         user_preference_repo=cast(Any, object()),
         user_bot_repo=cast(Any, object()),
         user_channel_repo=cast(Any, object()),
+        user_post_default_repo=cast(Any, object()),
         draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
         post_draft_repo=cast(Any, _PostDraftRepo()),
         audit_repo=cast(Any, object()),

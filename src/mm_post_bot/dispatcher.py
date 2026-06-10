@@ -17,6 +17,7 @@ from .repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
 )
@@ -90,6 +91,7 @@ class CommandContextFactory:
             user_preference_repo=user_preference_repo,
             user_bot_repo=UserBotRepo(self._conn),
             user_channel_repo=UserChannelRepo(self._conn),
+            user_post_default_repo=UserPostDefaultRepo(self._conn),
             draft_capture_repo=DraftCaptureRepo(self._conn),
             post_draft_repo=PostDraftRepo(self._conn),
             audit_repo=AuditRepo(self._conn),

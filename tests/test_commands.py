@@ -18,6 +18,7 @@ from mm_post_bot.repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
 )
@@ -129,6 +130,7 @@ class CommandFixture:
     user_preferences: UserPreferenceRepo
     user_bots: UserBotRepo
     user_channels: UserChannelRepo
+    user_post_defaults: UserPostDefaultRepo
     draft_captures: DraftCaptureRepo
     post_drafts: PostDraftRepo
     audits: AuditRepo
@@ -155,6 +157,7 @@ class CommandFixture:
             user_preference_repo=self.user_preferences,
             user_bot_repo=self.user_bots,
             user_channel_repo=self.user_channels,
+            user_post_default_repo=self.user_post_defaults,
             draft_capture_repo=self.draft_captures,
             post_draft_repo=self.post_drafts,
             audit_repo=self.audits,
@@ -200,6 +203,7 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
         user_preferences=UserPreferenceRepo(pg_conn),
         user_bots=UserBotRepo(pg_conn),
         user_channels=UserChannelRepo(pg_conn),
+        user_post_defaults=UserPostDefaultRepo(pg_conn),
         draft_captures=DraftCaptureRepo(pg_conn),
         post_drafts=PostDraftRepo(pg_conn),
         audits=AuditRepo(pg_conn),
