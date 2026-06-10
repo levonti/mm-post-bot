@@ -1073,6 +1073,120 @@ async def test_channel_commands_validate_args(
     assert expected in reply.lower()
 
 
+async def test_default_shows_empty_state(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!default")
+
+    assert reply is not None
+    assert "no default" in reply.lower()
+
+
+async def test_default_set_show_and_clear(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+
+    set_reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+    show_reply = await dispatch(ctx.make("alice-id", "alice"), "!default")
+    clear_reply = await dispatch(ctx.make("alice-id", "alice"), "!default clear")
+    empty_reply = await dispatch(ctx.make("alice-id", "alice"), "!default")
+
+    assert set_reply is not None
+    assert "news" in set_reply
+    assert "town" in set_reply
+    assert show_reply is not None
+    assert "news" in show_reply
+    assert "town" in show_reply
+    assert "channel-id" in show_reply
+    assert clear_reply is not None
+    assert "cleared" in clear_reply.lower()
+    assert empty_reply is not None
+    assert "no default" in empty_reply.lower()
+
+
+async def test_default_set_rejects_unknown_bot_or_channel(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+
+    missing_bot = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    missing_channel = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel missing",
+    )
+
+    assert missing_bot is not None
+    assert "bot" in missing_bot.lower()
+    assert missing_channel is not None
+    assert "channel" in missing_channel.lower()
+    assert ctx.user_post_defaults.get_for_owner("alice-id") is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "!default",
+        "!default set --bot news --channel town",
+        "!default clear",
+    ],
+)
+async def test_default_commands_require_approved_user(ctx: CommandFixture, command: str):
+    reply = await dispatch(ctx.make("alice-id", "alice"), command)
+
+    assert reply is not None
+    assert "register" in reply.lower()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "!default",
+        "!default set --bot news --channel town",
+        "!default clear",
+    ],
+)
+async def test_default_commands_require_dm(ctx: CommandFixture, command: str):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice", channel_type="O"), command)
+
+    assert reply is not None
+    assert "direct message" in reply.lower()
+
+
+async def test_default_replies_use_selected_locale(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!lang ru")
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!default")
+
+    assert reply is not None
+    assert "по умолчанию" in reply.lower()
+
+
 async def test_send_posts_saved_draft(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
