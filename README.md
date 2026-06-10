@@ -109,12 +109,15 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 !channel remove <alias>
 !channel list
 !channel show <alias>
+!default
+!default set --bot <alias> --channel <channel_alias>
+!default clear
 !draft
 !draft cancel
 !draft list
 !draft show <draft_id>
 !draft delete <draft_id>
-!send <draft_id> --bot <alias> --channel <channel_alias>
+!send <draft_id> [--bot <alias>] [--channel <channel_alias>]
 ```
 
 Админские команды:
@@ -148,7 +151,9 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 1. Отправьте `!draft` в DM manager-боту.
 2. Следующее обычное DM-сообщение сохранится как черновик.
 3. Проверьте черновик через `!draft list` или `!draft show <draft_id>`.
-4. Опубликуйте его через `!send <draft_id> --bot <alias> --channel <channel_alias>`.
+4. Если defaults настроены, опубликуйте его через `!send <draft_id>`.
+   Для разового выбора цели используйте
+   `!send <draft_id> --bot <alias> --channel <channel_alias>`.
 
 В каналах команды должны начинаться с упоминания manager-бота, например
 `@postbot !status`. В DM упоминание не нужно.
@@ -182,6 +187,7 @@ docker compose logs -f mm-post-bot
 ```text
 !bot add news <existing-bot-token>
 !channel add town <mattermost-channel-id>
+!default set --bot news --channel town
 !draft
 ```
 
@@ -194,7 +200,7 @@ Smoke test from mm-post-bot.
 Затем отправьте:
 
 ```text
-!send 1 --bot news --channel town
+!send 1
 ```
 
 Ожидаемый результат: в целевом канале появится `Smoke test from mm-post-bot.` от выбранного

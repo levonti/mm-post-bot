@@ -146,6 +146,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.dm_only": "Please use draft commands in a direct message.",
         "draft.saved": (
             "Draft #{draft_id} saved. Send it with:\n"
+            "!send {draft_id}\n"
+            "Or choose target explicitly:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
         "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
@@ -335,6 +337,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.dm_only": "Используйте команды черновиков только в direct message.",
         "draft.saved": (
             "Черновик #{draft_id} сохранён. Отправить его можно командой:\n"
+            "!send {draft_id}\n"
+            "Или выбрать цель явно:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
