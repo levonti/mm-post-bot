@@ -2,15 +2,10 @@
 set -eu
 
 head_commit="$(git rev-parse HEAD)"
-current_tag="${CI_COMMIT_TAG:-}"
 previous_tag=""
 
 for tag in $(git tag --merged HEAD --sort=-v:refname --list 'v*'); do
     if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-        continue
-    fi
-
-    if [ -n "$current_tag" ] && [ "$tag" = "$current_tag" ]; then
         continue
     fi
 

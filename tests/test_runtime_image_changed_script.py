@@ -5,7 +5,12 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / "ci/docker/runtime-image-changed.sh"
 
 
-def run(command: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str],
+    cwd: Path,
+    check: bool = True,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.update(
         {
@@ -15,6 +20,8 @@ def run(command: list[str], cwd: Path, check: bool = True) -> subprocess.Complet
             "GIT_COMMITTER_NAME": "CI Test",
         }
     )
+    if extra_env is not None:
+        env.update(extra_env)
     return subprocess.run(
         command,
         cwd=cwd,
@@ -57,6 +64,18 @@ def test_exits_zero_when_runtime_inputs_changed(tmp_path: Path) -> None:
     commit(repo, "change runtime")
 
     result = run([str(SCRIPT)], cwd=repo)
+
+    assert result.returncode == 0
+    assert "runtime image inputs changed" in result.stdout
+
+
+def test_ignores_ci_commit_tag_name_when_it_does_not_point_at_head(tmp_path: Path) -> None:
+    repo = init_repo(tmp_path)
+    run(["git", "tag", "v0.1.0"], cwd=repo)
+    write(repo, "src/app.py", "print('changed')\n")
+    commit(repo, "change runtime")
+
+    result = run([str(SCRIPT)], cwd=repo, extra_env={"CI_COMMIT_TAG": "v0.1.0"})
 
     assert result.returncode == 0
     assert "runtime image inputs changed" in result.stdout
