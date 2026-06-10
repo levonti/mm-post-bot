@@ -617,29 +617,77 @@ class UserPostDefaultRepo:
         bot_alias: str,
         channel_alias: str,
     ) -> UserPostDefault:
-        bot = UserBotRepo(self._conn).get_by_owner_and_alias(owner_user_id, bot_alias)
-        channel = UserChannelRepo(self._conn).get_by_owner_and_alias(owner_user_id, channel_alias)
         now = _now()
-        self._conn.execute(
+        row = self._conn.execute(
             """
-            INSERT INTO user_post_default (
-                owner_user_id,
-                default_user_bot_id,
-                default_user_channel_id,
-                updated_at
+            WITH selected_bot AS (
+                SELECT id
+                FROM user_bot
+                WHERE owner_user_id = %s
+                  AND alias = %s
+                  AND deleted_at IS NULL
+            ),
+            selected_channel AS (
+                SELECT id
+                FROM user_channel
+                WHERE owner_user_id = %s
+                  AND alias = %s
+                  AND deleted_at IS NULL
+            ),
+            upserted AS (
+                INSERT INTO user_post_default (
+                    owner_user_id,
+                    default_user_bot_id,
+                    default_user_channel_id,
+                    created_at,
+                    updated_at
+                )
+                SELECT %s, selected_bot.id, selected_channel.id, %s, %s
+                FROM selected_bot, selected_channel
+                ON CONFLICT (owner_user_id) DO UPDATE SET
+                    default_user_bot_id = EXCLUDED.default_user_bot_id,
+                    default_user_channel_id = EXCLUDED.default_user_channel_id,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING
+                    owner_user_id,
+                    created_at,
+                    updated_at,
+                    default_user_bot_id,
+                    default_user_channel_id
             )
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (owner_user_id) DO UPDATE SET
-                default_user_bot_id = EXCLUDED.default_user_bot_id,
-                default_user_channel_id = EXCLUDED.default_user_channel_id,
-                updated_at = EXCLUDED.updated_at
+            SELECT
+                d.owner_user_id AS default_owner_user_id,
+                d.created_at AS default_created_at,
+                d.updated_at AS default_updated_at,
+                b.id AS bot_id,
+                b.owner_user_id AS bot_owner_user_id,
+                b.alias AS bot_alias,
+                b.bot_user_id AS bot_user_id,
+                b.bot_username AS bot_username,
+                b.bot_display_name AS bot_display_name,
+                b.token_ciphertext AS bot_token_ciphertext,
+                b.token_fingerprint AS bot_token_fingerprint,
+                b.created_at AS bot_created_at,
+                b.updated_at AS bot_updated_at,
+                b.deleted_at AS bot_deleted_at,
+                c.id AS channel_row_id,
+                c.owner_user_id AS channel_owner_user_id,
+                c.alias AS channel_alias,
+                c.channel_id AS channel_mattermost_id,
+                c.created_at AS channel_created_at,
+                c.updated_at AS channel_updated_at,
+                c.deleted_at AS channel_deleted_at
+            FROM upserted d
+            JOIN user_bot b ON b.id = d.default_user_bot_id
+            JOIN user_channel c ON c.id = d.default_user_channel_id
+            WHERE b.owner_user_id = d.owner_user_id
+              AND c.owner_user_id = d.owner_user_id
             """,
-            (owner_user_id, bot.id, channel.id, now),
-        )
-        current = self.get_for_owner(owner_user_id)
-        if current is None:
-            raise LookupError(f"user_post_default not found after set: {owner_user_id}")
-        return current
+            (owner_user_id, bot_alias, owner_user_id, channel_alias, owner_user_id, now, now),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"user_post_default not found: {owner_user_id}/{bot_alias}/{channel_alias}")
+        return _user_post_default_from_row(row)
 
     def clear_for_owner(self, owner_user_id: str) -> None:
         self._conn.execute(

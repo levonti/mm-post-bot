@@ -309,7 +309,7 @@ def test_user_post_default_is_owner_scoped(repos):
     assert first.channel.id != second.channel.id
 
 
-def test_user_post_default_tracks_channel_alias_updates(repos):
+def test_user_post_default_tracks_channel_id_updates(repos):
     users, bots, channels, defaults, *_ = repos
     _approved_user(users, "u1", "alice")
     _bot(bots, "u1", "news")
