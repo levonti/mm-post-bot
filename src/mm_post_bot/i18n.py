@@ -148,7 +148,17 @@ CATALOG: dict[str, dict[str, str]] = {
             "Draft #{draft_id} saved. Send it with:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
-        "send.usage": "Usage: !send <draft_id> --bot <alias> --channel <channel_alias>",
+        "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
+        "send.defaults_missing": (
+            "No default bot/channel configured. Set one with:\n"
+            "!default set --bot <alias> --channel <channel_alias>\n"
+            "Or send explicitly with:\n"
+            "!send <draft_id> --bot <alias> --channel <channel_alias>"
+        ),
+        "send.default_stale": (
+            "Default target is incomplete because its bot or channel was removed. Set it again with:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
         "send.draft_unavailable": "Draft not found or unavailable.",
         "send.bot_not_found": "Could not find that bot.",
         "send.channel_not_found": "Could not find that channel alias.",
@@ -327,7 +337,17 @@ CATALOG: dict[str, dict[str, str]] = {
             "Черновик #{draft_id} сохранён. Отправить его можно командой:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
-        "send.usage": "Использование: !send <draft_id> --bot <alias> --channel <channel_alias>",
+        "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
+        "send.defaults_missing": (
+            "Bot/channel по умолчанию не настроены. Задайте их командой:\n"
+            "!default set --bot <alias> --channel <channel_alias>\n"
+            "Или отправьте явно:\n"
+            "!send <draft_id> --bot <alias> --channel <channel_alias>"
+        ),
+        "send.default_stale": (
+            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
         "send.draft_unavailable": "Черновик не найден или недоступен.",
         "send.bot_not_found": "Указанный бот не найден.",
         "send.channel_not_found": "Указанный channel alias не найден.",

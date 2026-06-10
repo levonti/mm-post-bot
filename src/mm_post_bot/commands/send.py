@@ -27,7 +27,12 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
     if parsed is None:
         return ctx.t("send.usage")
 
-    draft_id, bot_alias, channel_alias = parsed
+    draft_id, requested_bot_alias, requested_channel_alias = parsed
+    resolved = _resolve_aliases(ctx, requested_bot_alias, requested_channel_alias)
+    if isinstance(resolved, str):
+        return resolved
+
+    bot_alias, channel_alias = resolved
     async with _send_lock(ctx.caller_user_id, draft_id):
         return await _send_locked(ctx, draft_id, bot_alias, channel_alias)
 
@@ -147,15 +152,17 @@ async def _send_lock(owner_user_id: str, draft_id: int) -> AsyncIterator[None]:
         lock.release()
 
 
-def _parse_args(args: ParsedArgs) -> tuple[int, str, str] | None:
-    if len(args.positional) != 1 or set(args.flags) != {"bot", "channel"}:
+def _parse_args(args: ParsedArgs) -> tuple[int, str | None, str | None] | None:
+    if len(args.positional) != 1 or not set(args.flags).issubset({"bot", "channel"}):
         return None
 
-    bot_alias = args.flags["bot"]
-    channel_alias = args.flags["channel"]
-    if not isinstance(bot_alias, str) or not bot_alias:
+    bot_alias = args.flags.get("bot")
+    channel_alias = args.flags.get("channel")
+    if bot_alias is not None and (not isinstance(bot_alias, str) or not bot_alias):
         return None
-    if not isinstance(channel_alias, str) or not channel_alias:
+    if channel_alias is not None and (
+        not isinstance(channel_alias, str) or not channel_alias
+    ):
         return None
 
     try:
@@ -166,6 +173,23 @@ def _parse_args(args: ParsedArgs) -> tuple[int, str, str] | None:
         return None
 
     return draft_id, bot_alias, channel_alias
+
+
+def _resolve_aliases(
+    ctx: CommandContext,
+    bot_alias: str | None,
+    channel_alias: str | None,
+) -> tuple[str, str] | str:
+    if bot_alias is not None and channel_alias is not None:
+        return bot_alias, channel_alias
+
+    default = ctx.user_post_default_repo.get_for_owner(ctx.caller_user_id)
+    if default is None:
+        if ctx.user_post_default_repo.has_for_owner(ctx.caller_user_id):
+            return ctx.t("send.default_stale")
+        return ctx.t("send.defaults_missing")
+
+    return bot_alias or default.bot.alias, channel_alias or default.channel.alias
 
 
 def _record_failed_audit(
