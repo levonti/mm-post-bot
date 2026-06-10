@@ -129,7 +129,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "default.bot_not_found": "Could not find a bot named {alias}.",
         "default.channel_not_found": "Could not find a channel named {alias}.",
         "default.stale": (
-            "Default target is incomplete because its bot or channel was removed. Set it again with:\n"
+            "Default target is incomplete because its bot or channel was removed. "
+            "Set it again with:\n"
             "!default set --bot <alias> --channel <channel_alias>"
         ),
         "draft.start_usage": "Usage: !draft",
@@ -158,7 +159,8 @@ CATALOG: dict[str, dict[str, str]] = {
             "!send <draft_id> --bot <alias> --channel <channel_alias>"
         ),
         "send.default_stale": (
-            "Default target is incomplete because its bot or channel was removed. Set it again with:\n"
+            "Default target is incomplete because its bot or channel was removed. "
+            "Set it again with:\n"
             "!default set --bot <alias> --channel <channel_alias>"
         ),
         "send.draft_unavailable": "Draft not found or unavailable.",

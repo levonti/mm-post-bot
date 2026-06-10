@@ -686,7 +686,10 @@ class UserPostDefaultRepo:
             (owner_user_id, bot_alias, owner_user_id, channel_alias, owner_user_id, now, now),
         ).fetchone()
         if row is None:
-            raise LookupError(f"user_post_default not found: {owner_user_id}/{bot_alias}/{channel_alias}")
+            raise LookupError(
+                "user_post_default not found: "
+                f"{owner_user_id}/{bot_alias}/{channel_alias}"
+            )
         return _user_post_default_from_row(row)
 
     def clear_for_owner(self, owner_user_id: str) -> None:
