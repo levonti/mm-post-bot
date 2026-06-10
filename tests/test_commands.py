@@ -1355,6 +1355,9 @@ async def test_send_can_override_default_bot_or_channel(ctx: CommandFixture):
             "token": "alerts-token",
         },
     ]
+    audits = ctx.audits.list_for_user("alice-id")
+    assert [audit.channel_link for audit in audits] == ["town", "urgent"]
+    assert [audit.bot_username for audit in audits] == ["alerts-bot", "news-bot"]
 
 
 async def test_send_without_defaults_fails_safely(ctx: CommandFixture):
