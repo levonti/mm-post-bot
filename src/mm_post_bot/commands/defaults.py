@@ -46,11 +46,14 @@ async def set_defaults(ctx: CommandContext, args: ParsedArgs) -> str:
     except LookupError:
         return ctx.t("default.channel_not_found", alias=channel_alias)
 
-    default = ctx.user_post_default_repo.set_for_owner(
-        ctx.caller_user_id,
-        bot_alias=bot_alias,
-        channel_alias=channel_alias,
-    )
+    try:
+        default = ctx.user_post_default_repo.set_for_owner(
+            ctx.caller_user_id,
+            bot_alias=bot_alias,
+            channel_alias=channel_alias,
+        )
+    except LookupError:
+        return ctx.t("default.stale")
     return ctx.t(
         "default.set",
         bot_alias=default.bot.alias,

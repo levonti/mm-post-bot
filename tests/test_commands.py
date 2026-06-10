@@ -1115,6 +1115,26 @@ async def test_default_set_show_and_clear(ctx: CommandFixture):
     assert "no default" in empty_reply.lower()
 
 
+async def test_default_shows_stale_state(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!default set --bot news --channel town")
+    ctx.user_bots.soft_delete("alice-id", "news")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!default")
+
+    assert reply is not None
+    assert "removed" in reply.lower()
+    assert "!default set --bot <alias> --channel <channel_alias>" in reply
+
+
 async def test_default_set_rejects_unknown_bot_or_channel(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
