@@ -1,0 +1,156 @@
+stages:
+  - validate
+  - image
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
+variables:
+  GIT_DEPTH: "0"
+  UV_LINK_MODE: copy
+
+.validation-rules: &validation-rules
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  - if: '$CI_COMMIT_TAG'
+
+.runtime-image-inputs: &runtime-image-inputs
+  - Dockerfile
+  - .dockerignore
+  - pyproject.toml
+  - uv.lock
+  - src/**/*
+
+.python-validation:
+  image: ghcr.io/astral-sh/uv:0.11.7-python3.14-trixie
+  stage: validate
+  before_script:
+    - uv sync --frozen
+  rules: *validation-rules
+
+lint:
+  extends: .python-validation
+  script:
+    - uv run ruff check .
+
+typecheck:
+  extends: .python-validation
+  script:
+    - uv run mypy
+
+test:
+  extends: .python-validation
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+  script:
+    - uv run pytest
+
+.docker-job:
+  image: docker:git
+  stage: image
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_BUILDKIT: "1"
+
+docker:build-check:
+  extends: .docker-job
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: *runtime-image-inputs
+  script:
+    - |
+      set -eu
+      image="${DOCKERHUB_IMAGE:-local/mm-post-bot}"
+      docker build --pull --tag "$image:ci-$CI_COMMIT_SHORT_SHA" .
+
+docker:publish-main:
+  extends: .docker-job
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: *runtime-image-inputs
+  script:
+    - |
+      set -eu
+      : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in GitLab CI/CD variables}"
+      : "${DOCKERHUB_TOKEN:?Set DOCKERHUB_TOKEN in GitLab CI/CD variables}"
+
+      image="${DOCKERHUB_IMAGE:-$DOCKERHUB_USERNAME/mm-post-bot}"
+
+      echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+      docker build --pull \
+        --tag "$image:main" \
+        --tag "$image:sha-$CI_COMMIT_SHORT_SHA" \
+        .
+      docker push "$image:main"
+      docker push "$image:sha-$CI_COMMIT_SHORT_SHA"
+
+docker:publish-release:
+  extends: .docker-job
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+  script:
+    - |
+      set -eu
+
+      release_version="${CI_COMMIT_TAG#v}"
+      project_version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -n 1)"
+
+      if [ "$project_version" != "$release_version" ]; then
+        echo "Tag $CI_COMMIT_TAG does not match pyproject.toml version $project_version"
+        exit 1
+      fi
+
+      set +e
+      ci/docker/runtime-image-changed.sh
+      changed_exit="$?"
+      set -e
+
+      if [ "$changed_exit" -eq 1 ]; then
+        echo "Skipping release image publish because runtime image inputs did not change."
+        exit 0
+      fi
+
+      if [ "$changed_exit" -ne 0 ]; then
+        exit "$changed_exit"
+      fi
+
+      : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in GitLab CI/CD variables}"
+      : "${DOCKERHUB_TOKEN:?Set DOCKERHUB_TOKEN in GitLab CI/CD variables}"
+
+      image="${DOCKERHUB_IMAGE:-$DOCKERHUB_USERNAME/mm-post-bot}"
+      sha_tag="$image:sha-$CI_COMMIT_SHORT_SHA"
+
+      echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+
+      if docker manifest inspect "$sha_tag" >/dev/null 2>&1; then
+        echo "Promoting existing $sha_tag to release tags."
+        docker pull "$sha_tag"
+        docker tag "$sha_tag" "$image:$CI_COMMIT_TAG"
+        docker tag "$sha_tag" "$image:$release_version"
+        docker tag "$sha_tag" "$image:latest"
+        docker push "$image:$CI_COMMIT_TAG"
+        docker push "$image:$release_version"
+        docker push "$image:latest"
+        exit 0
+      fi
+
+      docker build --pull \
+        --tag "$image:$CI_COMMIT_TAG" \
+        --tag "$image:$release_version" \
+        --tag "$image:latest" \
+        .
+      docker push "$image:$CI_COMMIT_TAG"
+      docker push "$image:$release_version"
+      docker push "$image:latest"
