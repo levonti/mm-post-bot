@@ -73,7 +73,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.drafts.delete": "!draft delete <draft_id> - delete a saved draft",
         "help.publishing.title": "Publishing",
         "help.publishing.send": (
-            "!send <draft_id> --bot <alias> --channel <channel_alias> - publish a draft"
+            "!send <draft_id> [--bot <alias>] [--channel <channel_alias>] - publish a draft"
         ),
         "help.admin.title": "Admin",
         "help.admin.approve": "!user approve <username|user_id> - approve a user",
@@ -262,7 +262,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.drafts.delete": "!draft delete <draft_id> - удалить черновик",
         "help.publishing.title": "Публикация",
         "help.publishing.send": (
-            "!send <draft_id> --bot <alias> --channel <channel_alias> - опубликовать черновик"
+            "!send <draft_id> [--bot <alias>] [--channel <channel_alias>] - опубликовать черновик"
         ),
         "help.admin.title": "Администрирование",
         "help.admin.approve": "!user approve <username|user_id> - подтвердить пользователя",

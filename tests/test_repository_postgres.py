@@ -336,6 +336,19 @@ def test_user_post_default_treats_soft_deleted_targets_as_stale(repos):
     assert defaults.get_for_owner("u1") is None
 
 
+def test_user_post_default_treats_soft_deleted_channel_as_stale(repos):
+    users, bots, channels, defaults, *_ = repos
+    _approved_user(users, "u1", "alice")
+    _bot(bots, "u1", "news")
+    _channel(channels, "u1", "town")
+    defaults.set_for_owner("u1", bot_alias="news", channel_alias="town")
+
+    channels.soft_delete("u1", "town")
+
+    assert defaults.has_for_owner("u1") is True
+    assert defaults.get_for_owner("u1") is None
+
+
 def test_draft_capture_and_post_draft(repos):
     users, _, _, _, captures, drafts, _ = repos
     _approved_user(users, "u1", "alice")
