@@ -59,6 +59,12 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.channels.remove": "!channel remove <alias> - remove a channel alias",
         "help.channels.list": "!channel list - list your channel aliases",
         "help.channels.show": "!channel show <alias> - show a channel alias",
+        "help.defaults.title": "Defaults",
+        "help.defaults.show": "!default - show your default bot and channel",
+        "help.defaults.set": (
+            "!default set --bot <alias> --channel <channel_alias> - set default target"
+        ),
+        "help.defaults.clear": "!default clear - clear default target",
         "help.drafts.title": "Drafts",
         "help.drafts.start": "!draft - capture your next DM as a draft",
         "help.drafts.cancel": "!draft cancel - cancel active draft capture",
@@ -67,7 +73,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.drafts.delete": "!draft delete <draft_id> - delete a saved draft",
         "help.publishing.title": "Publishing",
         "help.publishing.send": (
-            "!send <draft_id> --bot <alias> --channel <channel_alias> - publish a draft"
+            "!send <draft_id> [--bot <alias>] [--channel <channel_alias>] - publish a draft"
         ),
         "help.admin.title": "Admin",
         "help.admin.approve": "!user approve <username|user_id> - approve a user",
@@ -106,6 +112,27 @@ CATALOG: dict[str, dict[str, str]] = {
         "channel.list_empty": "No channels added yet.",
         "channel.dm_only": "Please manage channel aliases in a direct message.",
         "channel.id_not_link": "Please provide a Mattermost channel id, not a channel link.",
+        "default.usage": "Usage: !default [set --bot <alias> --channel <channel_alias>|clear]",
+        "default.set_usage": "Usage: !default set --bot <alias> --channel <channel_alias>",
+        "default.clear_usage": "Usage: !default clear",
+        "default.dm_only": "Please manage defaults in a direct message.",
+        "default.none": (
+            "No default bot/channel configured. Set one with:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
+        "default.current": (
+            "Default bot: {bot_alias} ({bot_username})\n"
+            "Default channel: {channel_alias} ({channel_id})"
+        ),
+        "default.set": "Default target set: bot {bot_alias}, channel {channel_alias}.",
+        "default.cleared": "Default target cleared.",
+        "default.bot_not_found": "Could not find a bot named {alias}.",
+        "default.channel_not_found": "Could not find a channel named {alias}.",
+        "default.stale": (
+            "Default target is incomplete because its bot or channel was removed. "
+            "Set it again with:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
         "draft.start_usage": "Usage: !draft",
         "draft.started": "Draft capture started. Please send the post body in this direct message.",
         "draft.cancel_usage": "Usage: !draft cancel",
@@ -120,9 +147,22 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.dm_only": "Please use draft commands in a direct message.",
         "draft.saved": (
             "Draft #{draft_id} saved. Send it with:\n"
+            "!send {draft_id}\n"
+            "Or choose target explicitly:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
-        "send.usage": "Usage: !send <draft_id> --bot <alias> --channel <channel_alias>",
+        "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
+        "send.defaults_missing": (
+            "No default bot/channel configured. Set one with:\n"
+            "!default set --bot <alias> --channel <channel_alias>\n"
+            "Or send explicitly with:\n"
+            "!send <draft_id> --bot <alias> --channel <channel_alias>"
+        ),
+        "send.default_stale": (
+            "Default target is incomplete because its bot or channel was removed. "
+            "Set it again with:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
         "send.draft_unavailable": "Draft not found or unavailable.",
         "send.bot_not_found": "Could not find that bot.",
         "send.channel_not_found": "Could not find that channel alias.",
@@ -208,6 +248,12 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.channels.remove": "!channel remove <alias> - удалить alias канала",
         "help.channels.list": "!channel list - показать aliases каналов",
         "help.channels.show": "!channel show <alias> - показать alias канала",
+        "help.defaults.title": "По умолчанию",
+        "help.defaults.show": "!default - показать bot и channel по умолчанию",
+        "help.defaults.set": (
+            "!default set --bot <alias> --channel <channel_alias> - задать цель по умолчанию"
+        ),
+        "help.defaults.clear": "!default clear - очистить цель по умолчанию",
         "help.drafts.title": "Черновики",
         "help.drafts.start": "!draft - сохранить следующее DM как черновик",
         "help.drafts.cancel": "!draft cancel - отменить ожидание черновика",
@@ -216,7 +262,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.drafts.delete": "!draft delete <draft_id> - удалить черновик",
         "help.publishing.title": "Публикация",
         "help.publishing.send": (
-            "!send <draft_id> --bot <alias> --channel <channel_alias> - опубликовать черновик"
+            "!send <draft_id> [--bot <alias>] [--channel <channel_alias>] - опубликовать черновик"
         ),
         "help.admin.title": "Администрирование",
         "help.admin.approve": "!user approve <username|user_id> - подтвердить пользователя",
@@ -255,6 +301,28 @@ CATALOG: dict[str, dict[str, str]] = {
         "channel.list_empty": "Каналы ещё не добавлены.",
         "channel.dm_only": "Управляйте channel aliases только в direct message.",
         "channel.id_not_link": "Укажите Mattermost channel id, а не ссылку на канал.",
+        "default.usage": (
+            "Использование: !default [set --bot <alias> --channel <channel_alias>|clear]"
+        ),
+        "default.set_usage": "Использование: !default set --bot <alias> --channel <channel_alias>",
+        "default.clear_usage": "Использование: !default clear",
+        "default.dm_only": "Управляйте настройками по умолчанию только в direct message.",
+        "default.none": (
+            "Bot/channel по умолчанию не настроены. Задать можно командой:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
+        "default.current": (
+            "Bot по умолчанию: {bot_alias} ({bot_username})\n"
+            "Channel по умолчанию: {channel_alias} ({channel_id})"
+        ),
+        "default.set": "Цель по умолчанию задана: bot {bot_alias}, channel {channel_alias}.",
+        "default.cleared": "Цель по умолчанию очищена.",
+        "default.bot_not_found": "Бот с именем {alias} не найден.",
+        "default.channel_not_found": "Channel alias {alias} не найден.",
+        "default.stale": (
+            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
         "draft.start_usage": "Использование: !draft",
         "draft.started": (
             "Ожидание черновика включено. Отправьте текст поста в этом direct message."
@@ -271,9 +339,21 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.dm_only": "Используйте команды черновиков только в direct message.",
         "draft.saved": (
             "Черновик #{draft_id} сохранён. Отправить его можно командой:\n"
+            "!send {draft_id}\n"
+            "Или выбрать цель явно:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
-        "send.usage": "Использование: !send <draft_id> --bot <alias> --channel <channel_alias>",
+        "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
+        "send.defaults_missing": (
+            "Bot/channel по умолчанию не настроены. Задайте их командой:\n"
+            "!default set --bot <alias> --channel <channel_alias>\n"
+            "Или отправьте явно:\n"
+            "!send <draft_id> --bot <alias> --channel <channel_alias>"
+        ),
+        "send.default_stale": (
+            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
+            "!default set --bot <alias> --channel <channel_alias>"
+        ),
         "send.draft_unavailable": "Черновик не найден или недоступен.",
         "send.bot_not_found": "Указанный бот не найден.",
         "send.channel_not_found": "Указанный channel alias не найден.",

@@ -1,13 +1,14 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from ..db import transaction
 from ..mm_client import MattermostClient, MattermostError
-from ..repository import PostDraft, UserBot
+from ..repository import PostDraft, UserBot, UserChannel, UserPostDefault
 from ..security import decrypt_token
 from .access import require_approved_user
 from .context import CommandContext
@@ -16,6 +17,12 @@ from .parser import ParsedArgs
 # Keep locks for the process lifetime so a draft lock is never replaced while waiters exist.
 _SEND_LOCKS: dict[tuple[str, int], asyncio.Lock] = {}
 _SEND_LOCKS_GUARD = asyncio.Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedTargets:
+    bot: UserBot
+    channel: UserChannel
 
 
 async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
@@ -27,16 +34,27 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
     if parsed is None:
         return ctx.t("send.usage")
 
-    draft_id, bot_alias, channel_alias = parsed
+    draft_id, requested_bot_alias, requested_channel_alias = parsed
+    default = _resolve_default(ctx, requested_bot_alias, requested_channel_alias)
+    if isinstance(default, str):
+        return default
+
     async with _send_lock(ctx.caller_user_id, draft_id):
-        return await _send_locked(ctx, draft_id, bot_alias, channel_alias)
+        return await _send_locked(
+            ctx,
+            draft_id,
+            requested_bot_alias,
+            requested_channel_alias,
+            default,
+        )
 
 
 async def _send_locked(
     ctx: CommandContext,
     draft_id: int,
-    bot_alias: str,
-    channel_alias: str,
+    requested_bot_alias: str | None,
+    requested_channel_alias: str | None,
+    default: UserPostDefault | None,
 ) -> str:
     try:
         draft = ctx.post_draft_repo.get_for_owner(ctx.caller_user_id, draft_id)
@@ -46,24 +64,17 @@ async def _send_locked(
     if draft.status != "draft":
         return ctx.t("send.draft_unavailable")
 
-    try:
-        bot = ctx.user_bot_repo.get_by_owner_and_alias(ctx.caller_user_id, bot_alias)
-    except LookupError:
-        return ctx.t("send.bot_not_found")
-
-    try:
-        channel = ctx.user_channel_repo.get_by_owner_and_alias(ctx.caller_user_id, channel_alias)
-    except LookupError:
-        _record_failed_audit_safely(
-            ctx,
-            draft=draft,
-            bot=bot,
-            channel_alias=channel_alias,
-            resolved_channel_id=None,
-            error_code="channel_alias",
-            error_message="Unknown channel alias.",
-        )
-        return ctx.t("send.channel_not_found")
+    resolved = _resolve_targets(
+        ctx,
+        requested_bot_alias,
+        requested_channel_alias,
+        default,
+        draft,
+    )
+    if isinstance(resolved, str):
+        return resolved
+    bot = resolved.bot
+    channel = resolved.channel
 
     try:
         token = decrypt_token(bot.token_ciphertext, ctx.token_encryption_key)
@@ -72,7 +83,7 @@ async def _send_locked(
             ctx,
             draft=draft,
             bot=bot,
-            channel_alias=channel_alias,
+            channel_alias=channel.alias,
             resolved_channel_id=channel.channel_id,
             error_code="token_decrypt",
             error_message="Bot token storage is misconfigured.",
@@ -91,7 +102,7 @@ async def _send_locked(
                 ctx,
                 draft=draft,
                 bot=bot,
-                channel_alias=channel_alias,
+                channel_alias=channel.alias,
                 resolved_channel_id=channel.channel_id,
                 error_code="mattermost_post",
                 error_message=_safe_error_message(exc),
@@ -116,7 +127,7 @@ async def _send_locked(
                 user_bot_id=bot.id,
                 bot_user_id=bot.bot_user_id,
                 bot_username=bot.bot_username,
-                channel_link=channel_alias,
+                channel_link=channel.alias,
                 resolved_channel_id=channel.channel_id,
                 resolved_team_name=None,
                 resolved_channel_name=None,
@@ -147,15 +158,15 @@ async def _send_lock(owner_user_id: str, draft_id: int) -> AsyncIterator[None]:
         lock.release()
 
 
-def _parse_args(args: ParsedArgs) -> tuple[int, str, str] | None:
-    if len(args.positional) != 1 or set(args.flags) != {"bot", "channel"}:
+def _parse_args(args: ParsedArgs) -> tuple[int, str | None, str | None] | None:
+    if len(args.positional) != 1 or not set(args.flags).issubset({"bot", "channel"}):
         return None
 
-    bot_alias = args.flags["bot"]
-    channel_alias = args.flags["channel"]
-    if not isinstance(bot_alias, str) or not bot_alias:
+    bot_alias = args.flags.get("bot")
+    channel_alias = args.flags.get("channel")
+    if bot_alias is not None and (not isinstance(bot_alias, str) or not bot_alias):
         return None
-    if not isinstance(channel_alias, str) or not channel_alias:
+    if channel_alias is not None and (not isinstance(channel_alias, str) or not channel_alias):
         return None
 
     try:
@@ -166,6 +177,65 @@ def _parse_args(args: ParsedArgs) -> tuple[int, str, str] | None:
         return None
 
     return draft_id, bot_alias, channel_alias
+
+
+def _resolve_default(
+    ctx: CommandContext,
+    bot_alias: str | None,
+    channel_alias: str | None,
+) -> UserPostDefault | None | str:
+    if bot_alias is not None and channel_alias is not None:
+        return None
+
+    default = ctx.user_post_default_repo.get_for_owner(ctx.caller_user_id)
+    if default is None:
+        if ctx.user_post_default_repo.has_for_owner(ctx.caller_user_id):
+            return ctx.t("send.default_stale")
+        return ctx.t("send.defaults_missing")
+
+    return default
+
+
+def _resolve_targets(
+    ctx: CommandContext,
+    bot_alias: str | None,
+    channel_alias: str | None,
+    default: UserPostDefault | None,
+    draft: PostDraft,
+) -> _ResolvedTargets | str:
+    if bot_alias is None:
+        if default is None:
+            return ctx.t("send.defaults_missing")
+        bot = default.bot
+    else:
+        try:
+            bot = ctx.user_bot_repo.get_by_owner_and_alias(ctx.caller_user_id, bot_alias)
+        except LookupError:
+            return ctx.t("send.bot_not_found")
+
+    if channel_alias is None:
+        if default is None:
+            return ctx.t("send.defaults_missing")
+        channel = default.channel
+    else:
+        try:
+            channel = ctx.user_channel_repo.get_by_owner_and_alias(
+                ctx.caller_user_id,
+                channel_alias,
+            )
+        except LookupError:
+            _record_failed_audit_safely(
+                ctx,
+                draft=draft,
+                bot=bot,
+                channel_alias=channel_alias,
+                resolved_channel_id=None,
+                error_code="channel_alias",
+                error_message="Unknown channel alias.",
+            )
+            return ctx.t("send.channel_not_found")
+
+    return _ResolvedTargets(bot=bot, channel=channel)
 
 
 def _record_failed_audit(

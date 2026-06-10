@@ -82,6 +82,14 @@ def _approved_user_sections(ctx: CommandContext) -> list[str]:
             ],
         ),
         _section(
+            ctx.t("help.defaults.title"),
+            [
+                ctx.t("help.defaults.show"),
+                ctx.t("help.defaults.set"),
+                ctx.t("help.defaults.clear"),
+            ],
+        ),
+        _section(
             ctx.t("help.drafts.title"),
             [
                 ctx.t("help.drafts.start"),

@@ -9,6 +9,7 @@ from ..repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
 )
@@ -24,6 +25,7 @@ class CommandContext:
     user_preference_repo: UserPreferenceRepo
     user_bot_repo: UserBotRepo
     user_channel_repo: UserChannelRepo
+    user_post_default_repo: UserPostDefaultRepo
     draft_capture_repo: DraftCaptureRepo
     post_draft_repo: PostDraftRepo
     audit_repo: AuditRepo

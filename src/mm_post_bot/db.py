@@ -56,6 +56,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_channel_owner_alias_active
     WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_user_channel_owner ON user_channel(owner_user_id);
 
+CREATE TABLE IF NOT EXISTS user_post_default (
+    owner_user_id           TEXT PRIMARY KEY REFERENCES app_user(user_id),
+    default_user_bot_id     BIGINT NOT NULL REFERENCES user_bot(id),
+    default_user_channel_id BIGINT NOT NULL REFERENCES user_channel(id),
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_user_post_default_bot
+    ON user_post_default(default_user_bot_id);
+CREATE INDEX IF NOT EXISTS idx_user_post_default_channel
+    ON user_post_default(default_user_channel_id);
+
 CREATE TABLE IF NOT EXISTS draft_capture (
     owner_user_id TEXT PRIMARY KEY REFERENCES app_user(user_id),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),

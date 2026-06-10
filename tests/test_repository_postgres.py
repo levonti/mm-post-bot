@@ -11,6 +11,7 @@ from mm_post_bot.repository import (
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
+    UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
 )
@@ -36,11 +37,37 @@ def repos(pg_conn: DbConn):
         UserRepo(pg_conn),
         UserBotRepo(pg_conn),
         UserChannelRepo(pg_conn),
+        UserPostDefaultRepo(pg_conn),
         DraftCaptureRepo(pg_conn),
         PostDraftRepo(pg_conn),
         AuditRepo(pg_conn),
     )
     pg_conn.execute("ROLLBACK")
+
+
+def _approved_user(users: UserRepo, user_id: str, username: str) -> None:
+    users.upsert_seen_user(user_id=user_id, username=username, is_admin=False)
+    users.approve(user_id, approved_by="admin-id")
+
+
+def _bot(bots: UserBotRepo, owner_user_id: str, alias: str = "news"):
+    return bots.add(
+        owner_user_id=owner_user_id,
+        alias=alias,
+        bot_user_id=f"{alias}-bot-id",
+        bot_username=f"{alias}-bot",
+        bot_display_name=None,
+        token_ciphertext=f"{alias}-cipher",
+        token_fingerprint=f"{alias}-fp",
+    )
+
+
+def _channel(channels: UserChannelRepo, owner_user_id: str, alias: str = "town"):
+    return channels.add(
+        owner_user_id=owner_user_id,
+        alias=alias,
+        channel_id=f"{alias}-channel",
+    )
 
 
 def test_user_status_lifecycle(repos):
@@ -111,10 +138,8 @@ def test_user_preference_locale_update(pg_conn):
 
 def test_user_bot_alias_is_owner_scoped(repos):
     users, bots, *_ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
-    users.upsert_seen_user(user_id="u2", username="bob", is_admin=False)
-    users.approve("u2", approved_by="admin-id")
+    _approved_user(users, "u1", "alice")
+    _approved_user(users, "u2", "bob")
 
     first = bots.add(
         owner_user_id="u1",
@@ -142,8 +167,7 @@ def test_user_bot_alias_is_owner_scoped(repos):
 
 def test_user_bot_duplicate_active_alias_for_same_owner_raises(repos):
     users, bots, *_ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
+    _approved_user(users, "u1", "alice")
     bots.add(
         owner_user_id="u1",
         alias="news",
@@ -168,8 +192,7 @@ def test_user_bot_duplicate_active_alias_for_same_owner_raises(repos):
 
 def test_user_bot_soft_delete_hides_and_allows_alias_reuse(repos):
     users, bots, *_ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
+    _approved_user(users, "u1", "alice")
     bots.add(
         owner_user_id="u1",
         alias="news",
@@ -198,10 +221,8 @@ def test_user_bot_soft_delete_hides_and_allows_alias_reuse(repos):
 
 def test_user_channel_alias_is_owner_scoped(repos):
     users, _, channels, *_ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
-    users.upsert_seen_user(user_id="u2", username="bob", is_admin=False)
-    users.approve("u2", approved_by="admin-id")
+    _approved_user(users, "u1", "alice")
+    _approved_user(users, "u2", "bob")
 
     first = channels.add(owner_user_id="u1", alias="town", channel_id="channel-1")
     second = channels.add(owner_user_id="u2", alias="town", channel_id="channel-2")
@@ -213,8 +234,7 @@ def test_user_channel_alias_is_owner_scoped(repos):
 
 def test_user_channel_duplicate_active_alias_for_same_owner_raises(repos):
     users, _, channels, *_ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
+    _approved_user(users, "u1", "alice")
     channels.add(owner_user_id="u1", alias="town", channel_id="channel-1")
 
     with pytest.raises(UniqueViolation):
@@ -223,8 +243,7 @@ def test_user_channel_duplicate_active_alias_for_same_owner_raises(repos):
 
 def test_user_channel_update_list_and_soft_delete(repos):
     users, _, channels, *_ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
+    _approved_user(users, "u1", "alice")
     channels.add(owner_user_id="u1", alias="town", channel_id="old-channel")
     alerts = channels.add(owner_user_id="u1", alias="alerts", channel_id="alerts-channel")
 
@@ -244,10 +263,95 @@ def test_user_channel_update_list_and_soft_delete(repos):
     assert channels.get_by_owner_and_alias("u1", "town") == replacement
 
 
+def test_user_post_default_set_get_update_and_clear(repos):
+    users, bots, channels, defaults, *_ = repos
+    _approved_user(users, "u1", "alice")
+    _bot(bots, "u1", "news")
+    _channel(channels, "u1", "town")
+
+    created = defaults.set_for_owner("u1", bot_alias="news", channel_alias="town")
+
+    assert created.owner_user_id == "u1"
+    assert created.bot.alias == "news"
+    assert created.channel.alias == "town"
+    assert defaults.get_for_owner("u1") == created
+    assert defaults.has_for_owner("u1") is True
+
+    _bot(bots, "u1", "alerts")
+    _channel(channels, "u1", "urgent")
+    updated = defaults.set_for_owner("u1", bot_alias="alerts", channel_alias="urgent")
+
+    assert updated.bot.alias == "alerts"
+    assert updated.channel.alias == "urgent"
+    assert updated.updated_at >= created.updated_at
+
+    defaults.clear_for_owner("u1")
+
+    assert defaults.get_for_owner("u1") is None
+    assert defaults.has_for_owner("u1") is False
+
+
+def test_user_post_default_is_owner_scoped(repos):
+    users, bots, channels, defaults, *_ = repos
+    _approved_user(users, "u1", "alice")
+    _approved_user(users, "u2", "bob")
+    _bot(bots, "u1", "news")
+    _channel(channels, "u1", "town")
+    _bot(bots, "u2", "news")
+    _channel(channels, "u2", "town")
+
+    first = defaults.set_for_owner("u1", bot_alias="news", channel_alias="town")
+    second = defaults.set_for_owner("u2", bot_alias="news", channel_alias="town")
+
+    assert first.owner_user_id == "u1"
+    assert second.owner_user_id == "u2"
+    assert first.bot.id != second.bot.id
+    assert first.channel.id != second.channel.id
+
+
+def test_user_post_default_tracks_channel_id_updates(repos):
+    users, bots, channels, defaults, *_ = repos
+    _approved_user(users, "u1", "alice")
+    _bot(bots, "u1", "news")
+    _channel(channels, "u1", "town")
+    defaults.set_for_owner("u1", bot_alias="news", channel_alias="town")
+
+    channels.update_channel_id("u1", "town", channel_id="new-channel-id")
+
+    current = defaults.get_for_owner("u1")
+    assert current is not None
+    assert current.channel.channel_id == "new-channel-id"
+
+
+def test_user_post_default_treats_soft_deleted_targets_as_stale(repos):
+    users, bots, channels, defaults, *_ = repos
+    _approved_user(users, "u1", "alice")
+    _bot(bots, "u1", "news")
+    _channel(channels, "u1", "town")
+    defaults.set_for_owner("u1", bot_alias="news", channel_alias="town")
+
+    bots.soft_delete("u1", "news")
+
+    assert defaults.has_for_owner("u1") is True
+    assert defaults.get_for_owner("u1") is None
+
+
+def test_user_post_default_treats_soft_deleted_channel_as_stale(repos):
+    users, bots, channels, defaults, *_ = repos
+    _approved_user(users, "u1", "alice")
+    _bot(bots, "u1", "news")
+    _channel(channels, "u1", "town")
+    defaults.set_for_owner("u1", bot_alias="news", channel_alias="town")
+
+    channels.soft_delete("u1", "town")
+
+    assert defaults.has_for_owner("u1") is True
+    assert defaults.get_for_owner("u1") is None
+
+
 def test_draft_capture_and_post_draft(repos):
-    users, _, _, captures, drafts, _ = repos
-    users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
-    users.approve("u1", approved_by="admin-id")
+    users, _, _, _, captures, drafts, _ = repos
+    _approved_user(users, "u1", "alice")
 
     expires_at = datetime.now(UTC) + timedelta(minutes=30)
     captures.start(owner_user_id="u1", expires_at=expires_at)
@@ -260,7 +364,7 @@ def test_draft_capture_and_post_draft(repos):
 
 
 def test_post_draft_list_only_returns_active_owner_drafts(repos):
-    users, _, _, _, drafts, _ = repos
+    users, _, _, _, _, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     users.upsert_seen_user(user_id="u2", username="bob", is_admin=False)
@@ -273,7 +377,7 @@ def test_post_draft_list_only_returns_active_owner_drafts(repos):
 
 
 def test_post_draft_soft_delete_hides_draft(repos):
-    users, _, _, _, drafts, _ = repos
+    users, _, _, _, _, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     draft = drafts.create(owner_user_id="u1", message="hello", message_sha256="hash")
@@ -285,7 +389,7 @@ def test_post_draft_soft_delete_hides_draft(repos):
 
 
 def test_post_draft_mark_sent_sets_sent_fields_and_hides_draft(repos):
-    users, bots, _, _, drafts, _ = repos
+    users, bots, _, _, _, drafts, _ = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     bot = bots.add(
@@ -316,7 +420,7 @@ def test_post_draft_mark_sent_sets_sent_fields_and_hides_draft(repos):
 
 
 def test_audit_success_row(repos):
-    users, bots, _, _, drafts, audits = repos
+    users, bots, _, _, _, drafts, audits = repos
     users.upsert_seen_user(user_id="u1", username="alice", is_admin=False)
     users.approve("u1", approved_by="admin-id")
     bot = bots.add(
