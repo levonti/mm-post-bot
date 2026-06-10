@@ -687,8 +687,7 @@ class UserPostDefaultRepo:
         ).fetchone()
         if row is None:
             raise LookupError(
-                "user_post_default not found: "
-                f"{owner_user_id}/{bot_alias}/{channel_alias}"
+                f"user_post_default not found: {owner_user_id}/{bot_alias}/{channel_alias}"
             )
         return _user_post_default_from_row(row)
 

@@ -160,9 +160,7 @@ def _parse_args(args: ParsedArgs) -> tuple[int, str | None, str | None] | None:
     channel_alias = args.flags.get("channel")
     if bot_alias is not None and (not isinstance(bot_alias, str) or not bot_alias):
         return None
-    if channel_alias is not None and (
-        not isinstance(channel_alias, str) or not channel_alias
-    ):
+    if channel_alias is not None and (not isinstance(channel_alias, str) or not channel_alias):
         return None
 
     try:
