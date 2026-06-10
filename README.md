@@ -90,6 +90,10 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 формируется из `POSTGRES_USER`, `POSTGRES_PASSWORD` и `POSTGRES_DB`; compose не задает
 пароль PostgreSQL по умолчанию.
 
+## Порядок обновления
+
+См. [docs/update-procedure.md](docs/update-procedure.md).
+
 ## Команды
 
 Пользовательские команды:
