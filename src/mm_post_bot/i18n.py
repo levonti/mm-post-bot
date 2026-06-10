@@ -59,12 +59,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.channels.remove": "!channel remove <alias> - remove a channel alias",
         "help.channels.list": "!channel list - list your channel aliases",
         "help.channels.show": "!channel show <alias> - show a channel alias",
-        "help.defaults.title": "Defaults",
-        "help.defaults.show": "!default - show your default target",
-        "help.defaults.set": (
-            "!default set --bot <alias> --channel <channel_alias> - set your default target"
-        ),
-        "help.defaults.clear": "!default clear - clear your default target",
         "help.drafts.title": "Drafts",
         "help.drafts.start": "!draft - capture your next DM as a draft",
         "help.drafts.cancel": "!draft cancel - cancel active draft capture",
@@ -214,13 +208,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.channels.remove": "!channel remove <alias> - удалить alias канала",
         "help.channels.list": "!channel list - показать aliases каналов",
         "help.channels.show": "!channel show <alias> - показать alias канала",
-        "help.defaults.title": "Defaults",
-        "help.defaults.show": "!default - показать целевой канал по умолчанию",
-        "help.defaults.set": (
-            "!default set --bot <alias> --channel <channel_alias> - "
-            "задать целевой канал по умолчанию"
-        ),
-        "help.defaults.clear": "!default clear - очистить целевой канал по умолчанию",
         "help.drafts.title": "Черновики",
         "help.drafts.start": "!draft - сохранить следующее DM как черновик",
         "help.drafts.cancel": "!draft cancel - отменить ожидание черновика",

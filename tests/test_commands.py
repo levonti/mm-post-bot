@@ -605,18 +605,6 @@ async def test_help_changes_after_user_approval(ctx: CommandFixture):
     assert "!send <draft_id> --bot <alias> --channel <channel_alias>" in approved
 
 
-async def test_help_includes_default_commands_for_approved_user(ctx: CommandFixture):
-    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
-    ctx.users.approve("alice-id", approved_by="admin-id")
-
-    reply = await dispatch(ctx.make("alice-id", "alice"), "!help")
-
-    assert reply is not None
-    assert "!default" in reply
-    assert "!default set --bot <alias> --channel <channel_alias>" in reply
-    assert "!default clear" in reply
-
-
 async def test_help_keeps_posting_commands_from_blocked_user(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
