@@ -1669,6 +1669,25 @@ async def test_send_without_defaults_fails_safely(ctx: CommandFixture):
     assert ctx.audits.list_for_user("alice-id") == []
 
 
+async def test_send_missing_defaults_points_to_lists_and_default_setup(
+    ctx: CommandFixture,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="No default body",
+        message_sha256=hash_message("No default body"),
+    )
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), f"!send {draft.id}")
+
+    assert reply is not None
+    assert "!bot list" in reply
+    assert "!channel list" in reply
+    assert "!default set --bot <alias> --channel <channel_alias>" in reply
+
+
 async def test_send_with_stale_defaults_fails_safely(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
@@ -1785,6 +1804,33 @@ async def test_send_rejects_foreign_draft(ctx: CommandFixture):
     assert "do not leak" not in reply
     assert ctx.created_posts == []
     assert ctx.audits.list_for_user("alice-id") == []
+
+
+async def test_send_unknown_channel_points_to_channel_list_and_add_current(
+    ctx: CommandFixture,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Missing channel body",
+        message_sha256=hash_message("Missing channel body"),
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel missing",
+    )
+
+    assert reply is not None
+    assert "!channel list" in reply
+    assert "@postbot !channel add-current <alias>" in reply
 
 
 async def test_send_records_failed_audit_on_unknown_channel_alias(ctx: CommandFixture):

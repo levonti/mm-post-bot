@@ -140,9 +140,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "default.bot_not_found": "Could not find a bot named {alias}.",
         "default.channel_not_found": "Could not find a channel named {alias}.",
         "default.stale": (
-            "Default target is incomplete because its bot or channel was removed. "
-            "Set it again with:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Default target is incomplete because its bot or channel was removed.\n"
+            "Check aliases: !bot list and !channel list\n"
+            "Set it again: !default set --bot <alias> --channel <channel_alias>\n"
+            "Or clear it: !default clear"
         ),
         "draft.start_usage": "Usage: !draft",
         "draft.started": "Draft capture started. Please send the post body in this direct message.",
@@ -190,19 +191,25 @@ CATALOG: dict[str, dict[str, str]] = {
         "setup.next": "Next: {command}",
         "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
-            "No default bot/channel configured. Set one with:\n"
-            "!default set --bot <alias> --channel <channel_alias>\n"
-            "Or send explicitly with:\n"
+            "No default bot/channel configured.\n"
+            "Check aliases: !bot list and !channel list\n"
+            "Set a default: !default set --bot <alias> --channel <channel_alias>\n"
+            "Or send explicitly: "
             "!send <draft_id> --bot <alias> --channel <channel_alias>"
         ),
         "send.default_stale": (
-            "Default target is incomplete because its bot or channel was removed. "
-            "Set it again with:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Default target is incomplete because its bot or channel was removed.\n"
+            "Check aliases: !bot list and !channel list\n"
+            "Set it again: !default set --bot <alias> --channel <channel_alias>\n"
+            "Or clear it: !default clear"
         ),
         "send.draft_unavailable": "Draft not found or unavailable.",
-        "send.bot_not_found": "Could not find that bot.",
-        "send.channel_not_found": "Could not find that channel alias.",
+        "send.bot_not_found": "Could not find that bot. Check aliases with: !bot list",
+        "send.channel_not_found": (
+            "Could not find that channel alias.\n"
+            "Check aliases: !channel list\n"
+            "From a channel, save it with: @postbot !channel add-current <alias>"
+        ),
         "send.storage_misconfigured": (
             "Bot token storage is misconfigured. Please contact an administrator."
         ),
@@ -368,8 +375,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "default.bot_not_found": "Бот с именем {alias} не найден.",
         "default.channel_not_found": "Channel alias {alias} не найден.",
         "default.stale": (
-            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Цель по умолчанию неполная: bot или channel был удалён.\n"
+            "Проверить aliases: !bot list и !channel list\n"
+            "Задать заново: !default set --bot <alias> --channel <channel_alias>\n"
+            "Или очистить: !default clear"
         ),
         "draft.start_usage": "Использование: !draft",
         "draft.started": (
@@ -419,18 +428,25 @@ CATALOG: dict[str, dict[str, str]] = {
         "setup.next": "Дальше: {command}",
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
-            "Bot/channel по умолчанию не настроены. Задайте их командой:\n"
-            "!default set --bot <alias> --channel <channel_alias>\n"
-            "Или отправьте явно:\n"
+            "Bot/channel по умолчанию не настроены.\n"
+            "Проверить aliases: !bot list и !channel list\n"
+            "Задать цель: !default set --bot <alias> --channel <channel_alias>\n"
+            "Или отправить явно: "
             "!send <draft_id> --bot <alias> --channel <channel_alias>"
         ),
         "send.default_stale": (
-            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Цель по умолчанию неполная: bot или channel был удалён.\n"
+            "Проверить aliases: !bot list и !channel list\n"
+            "Задать заново: !default set --bot <alias> --channel <channel_alias>\n"
+            "Или очистить: !default clear"
         ),
         "send.draft_unavailable": "Черновик не найден или недоступен.",
-        "send.bot_not_found": "Указанный бот не найден.",
-        "send.channel_not_found": "Указанный channel alias не найден.",
+        "send.bot_not_found": "Указанный бот не найден. Проверить aliases: !bot list",
+        "send.channel_not_found": (
+            "Указанный channel alias не найден.\n"
+            "Проверить aliases: !channel list\n"
+            "Из канала можно сохранить alias: @postbot !channel add-current <alias>"
+        ),
         "send.storage_misconfigured": (
             "Хранилище bot token настроено неверно. Обратитесь к администратору."
         ),
