@@ -1021,6 +1021,46 @@ async def test_channel_add_lists_shows_sets_and_removes_alias(ctx: CommandFixtur
         ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
 
 
+async def test_channel_add_current_saves_current_channel_id(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    channel_ctx = ctx.make("alice-id", "alice", channel_type="O")
+    channel_ctx = replace(channel_ctx, channel_id="current-channel-id")
+
+    reply = await dispatch(channel_ctx, "!channel add-current town")
+
+    assert reply is not None
+    assert "added" in reply.lower()
+    saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+    assert saved.channel_id == "current-channel-id"
+
+
+async def test_channel_add_current_rejects_dm_duplicate_and_unapproved_user(
+    ctx: CommandFixture,
+):
+    pending = await dispatch(
+        ctx.make("alice-id", "alice", channel_type="O"),
+        "!channel add-current town",
+    )
+    assert pending is not None
+    assert "register" in pending.lower()
+
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    dm_reply = await dispatch(ctx.make("alice-id", "alice"), "!channel add-current town")
+    assert dm_reply is not None
+    assert "channel" in dm_reply.lower()
+
+    channel_ctx = replace(
+        ctx.make("alice-id", "alice", channel_type="O"),
+        channel_id="current-channel-id",
+    )
+    await dispatch(channel_ctx, "!channel add-current town")
+    duplicate = await dispatch(channel_ctx, "!channel add-current town")
+    assert duplicate is not None
+    assert "already" in duplicate.lower()
+
+
 async def test_channel_aliases_are_owner_scoped(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")

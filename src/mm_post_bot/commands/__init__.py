@@ -18,6 +18,7 @@ REGISTRY: dict[tuple[str, ...], Handler] = {
     ("bot", "list"): bot.list_bots,
     ("bot", "remove"): bot.remove,
     ("channel", "add"): channel.add,
+    ("channel", "add-current"): channel.add_current,
     ("channel", "set"): channel.set_channel,
     ("channel", "remove"): channel.remove,
     ("channel", "list"): channel.list_channels,

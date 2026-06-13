@@ -75,6 +75,7 @@ def _approved_user_sections(ctx: CommandContext) -> list[str]:
             ctx.t("help.channels.title"),
             [
                 ctx.t("help.channels.add"),
+                ctx.t("help.channels.add_current"),
                 ctx.t("help.channels.set"),
                 ctx.t("help.channels.remove"),
                 ctx.t("help.channels.list"),

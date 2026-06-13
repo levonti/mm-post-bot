@@ -55,6 +55,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.posting_bots.remove": "!bot remove <alias> - remove a posting bot",
         "help.channels.title": "Channels",
         "help.channels.add": "!channel add <alias> <channel_id> - add a channel alias",
+        "help.channels.add_current": (
+            "@postbot !channel add-current <alias> - save the current channel as an alias"
+        ),
         "help.channels.set": "!channel set <alias> <channel_id> - update a channel alias",
         "help.channels.remove": "!channel remove <alias> - remove a channel alias",
         "help.channels.list": "!channel list - list your channel aliases",
@@ -98,6 +101,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "bot.not_found": "Could not find a bot named {alias}.",
         "bot.removed": "Removed bot {alias}.",
         "channel.add_usage": "Usage: !channel add <alias> <channel_id>",
+        "channel.add_current_usage": "Usage: !channel add-current <alias>",
+        "channel.add_current_channel_only": (
+            "Run this from the Mattermost channel you want to save, for example: "
+            "@postbot !channel add-current town"
+        ),
         "channel.set_usage": "Usage: !channel set <alias> <channel_id>",
         "channel.remove_usage": "Usage: !channel remove <alias>",
         "channel.list_usage": "Usage: !channel list",
@@ -106,6 +114,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "You already have a channel named {alias}. Use !channel set {alias} <channel_id>."
         ),
         "channel.added": "Added channel {alias}.",
+        "channel.add_current_added": "Added current channel as {alias}.",
         "channel.updated": "Updated channel {alias}.",
         "channel.removed": "Removed channel {alias}.",
         "channel.not_found": "Could not find a channel named {alias}.",
@@ -259,6 +268,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.posting_bots.remove": "!bot remove <alias> - удалить posting-бота",
         "help.channels.title": "Каналы",
         "help.channels.add": "!channel add <alias> <channel_id> - добавить alias канала",
+        "help.channels.add_current": (
+            "@postbot !channel add-current <alias> - сохранить текущий канал как alias"
+        ),
         "help.channels.set": "!channel set <alias> <channel_id> - изменить alias канала",
         "help.channels.remove": "!channel remove <alias> - удалить alias канала",
         "help.channels.list": "!channel list - показать aliases каналов",
@@ -302,6 +314,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "bot.not_found": "Бот с именем {alias} не найден.",
         "bot.removed": "Bot {alias} удалён.",
         "channel.add_usage": "Использование: !channel add <alias> <channel_id>",
+        "channel.add_current_usage": "Использование: !channel add-current <alias>",
+        "channel.add_current_channel_only": (
+            "Выполните эту команду в нужном Mattermost-канале, например: "
+            "@postbot !channel add-current town"
+        ),
         "channel.set_usage": "Использование: !channel set <alias> <channel_id>",
         "channel.remove_usage": "Использование: !channel remove <alias>",
         "channel.list_usage": "Использование: !channel list",
@@ -310,6 +327,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "У вас уже есть channel alias {alias}. Используйте !channel set {alias} <channel_id>."
         ),
         "channel.added": "Channel alias {alias} добавлен.",
+        "channel.add_current_added": "Текущий канал сохранён как {alias}.",
         "channel.updated": "Channel alias {alias} обновлён.",
         "channel.removed": "Channel alias {alias} удалён.",
         "channel.not_found": "Channel alias {alias} не найден.",
