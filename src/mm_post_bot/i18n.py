@@ -156,12 +156,14 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.show": "Draft #{draft_id}:\n{message}",
         "draft.deleted": "Draft #{draft_id} deleted.",
         "draft.dm_only": "Please use draft commands in a direct message.",
+        "draft.saved_header": "Draft #{draft_id} saved.",
         "draft.saved": (
             "Draft #{draft_id} saved. Send it with:\n"
             "!send {draft_id}\n"
             "Or choose target explicitly:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
+        "posting_state.preview": "Preview: {preview}",
         "posting_state.target.ready": (
             "Target: bot {bot_alias} ({bot_username}), channel {channel_alias} ({channel_id})"
         ),
@@ -177,6 +179,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "Set a default with: !default set --bot <alias> --channel <channel_alias>"
         ),
         "posting_state.delete_hint": "Delete: !draft delete {draft_id}",
+        "posting_state.review_hint": "Review: !draft show {draft_id}",
         "setup.usage": "Usage: !setup",
         "next.usage": "Usage: !next",
         "setup.registration": "Registration: {status}",
@@ -382,12 +385,14 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.show": "Черновик #{draft_id}:\n{message}",
         "draft.deleted": "Черновик #{draft_id} удалён.",
         "draft.dm_only": "Используйте команды черновиков только в direct message.",
+        "draft.saved_header": "Черновик #{draft_id} сохранён.",
         "draft.saved": (
             "Черновик #{draft_id} сохранён. Отправить его можно командой:\n"
             "!send {draft_id}\n"
             "Или выбрать цель явно:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
+        "posting_state.preview": "Предпросмотр: {preview}",
         "posting_state.target.ready": (
             "Цель: bot {bot_alias} ({bot_username}), channel {channel_alias} ({channel_id})"
         ),
@@ -403,6 +408,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "Задать цель по умолчанию: !default set --bot <alias> --channel <channel_alias>"
         ),
         "posting_state.delete_hint": "Удалить: !draft delete {draft_id}",
+        "posting_state.review_hint": "Проверить: !draft show {draft_id}",
         "setup.usage": "Использование: !setup",
         "next.usage": "Использование: !next",
         "setup.registration": "Регистрация: {status}",

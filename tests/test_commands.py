@@ -957,6 +957,29 @@ async def test_draft_show_includes_ready_target_context(ctx: CommandFixture):
     assert f"Delete: !draft delete {draft.id}" in reply
 
 
+async def test_saved_draft_reply_uses_ready_default_target(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!default set --bot news --channel town")
+    await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    from mm_post_bot.dispatcher import handle_draft_body
+
+    reply = await handle_draft_body(ctx.make("alice-id", "alice"), "Ready default body")
+
+    assert reply is not None
+    assert "Target: bot news (news-bot), channel town (channel-id)" in reply
+    assert "Publish: !send" in reply
+    assert "--bot <alias>" not in reply
+
+
 async def test_draft_show_includes_missing_target_recovery(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
