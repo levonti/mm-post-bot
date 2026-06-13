@@ -578,6 +578,40 @@ async def test_setup_guides_fully_configured_user_with_saved_draft_to_draft_list
     assert next_reply == "Next: !draft list"
 
 
+async def test_setup_commands_require_dm_without_leaking_setup_state(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+    ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Saved post body",
+        message_sha256=hash_message("Saved post body"),
+    )
+    channel_ctx = ctx.make("alice-id", "alice", channel_type="O")
+
+    setup_reply = await dispatch(channel_ctx, "!setup")
+    next_reply = await dispatch(channel_ctx, "!next")
+
+    assert setup_reply == "Please use setup commands in a direct message."
+    assert next_reply == "Please use setup commands in a direct message."
+    for reply in (setup_reply, next_reply):
+        assert "Default:" not in reply
+        assert "Drafts:" not in reply
+        assert "Next:" not in reply
+        assert "news" not in reply
+        assert "town" not in reply
+
+
 async def test_admin_lists_pending_users(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     await dispatch(ctx.make("bob-id", "bob"), "!register")
@@ -1801,6 +1835,7 @@ async def test_send_rejects_foreign_draft(ctx: CommandFixture):
     assert reply is not None
     assert "draft" in reply.lower()
     assert "unavailable" in reply.lower() or "not found" in reply.lower()
+    assert "!draft list" in reply
     assert "do not leak" not in reply
     assert ctx.created_posts == []
     assert ctx.audits.list_for_user("alice-id") == []
@@ -1965,6 +2000,7 @@ async def test_send_rejects_deleted_and_sent_drafts(ctx: CommandFixture):
         )
         assert reply is not None
         assert "unavailable" in reply.lower() or "not found" in reply.lower()
+        assert "!draft list" in reply
         assert "body" not in reply
 
     assert ctx.created_posts == []

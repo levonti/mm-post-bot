@@ -183,6 +183,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "posting_state.review_hint": "Review: !draft show {draft_id}",
         "setup.usage": "Usage: !setup",
         "next.usage": "Usage: !next",
+        "setup.dm_only": "Please use setup commands in a direct message.",
         "setup.registration": "Registration: {status}",
         "setup.bots": "Posting bots: {count}",
         "setup.channels": "Channels: {count}",
@@ -203,7 +204,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "Set it again: !default set --bot <alias> --channel <channel_alias>\n"
             "Or clear it: !default clear"
         ),
-        "send.draft_unavailable": "Draft not found or unavailable.",
+        "send.draft_unavailable": "Draft not found or unavailable. Check drafts: !draft list",
         "send.bot_not_found": "Could not find that bot. Check aliases with: !bot list",
         "send.channel_not_found": (
             "Could not find that channel alias.\n"
@@ -420,6 +421,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "posting_state.review_hint": "Проверить: !draft show {draft_id}",
         "setup.usage": "Использование: !setup",
         "next.usage": "Использование: !next",
+        "setup.dm_only": "Используйте команды настройки только в direct message.",
         "setup.registration": "Регистрация: {status}",
         "setup.bots": "Posting-боты: {count}",
         "setup.channels": "Каналы: {count}",
@@ -440,7 +442,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "Задать заново: !default set --bot <alias> --channel <channel_alias>\n"
             "Или очистить: !default clear"
         ),
-        "send.draft_unavailable": "Черновик не найден или недоступен.",
+        "send.draft_unavailable": "Черновик не найден или недоступен. Проверьте: !draft list",
         "send.bot_not_found": "Указанный бот не найден. Проверить aliases: !bot list",
         "send.channel_not_found": (
             "Указанный channel alias не найден.\n"
