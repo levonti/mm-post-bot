@@ -151,6 +151,21 @@ CATALOG: dict[str, dict[str, str]] = {
             "Or choose target explicitly:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
+        "posting_state.target.ready": (
+            "Target: bot {bot_alias} ({bot_username}), channel {channel_alias} ({channel_id})"
+        ),
+        "posting_state.target.missing": "Target: no default bot/channel configured.",
+        "posting_state.target.stale": (
+            "Target: default bot/channel is incomplete because one was removed."
+        ),
+        "posting_state.publish.short": "Publish: !send {draft_id}",
+        "posting_state.publish.explicit": (
+            "Publish: !send {draft_id} --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.default_recovery": (
+            "Set a default with: !default set --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.delete_hint": "Delete: !draft delete {draft_id}",
         "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "No default bot/channel configured. Set one with:\n"
@@ -343,6 +358,21 @@ CATALOG: dict[str, dict[str, str]] = {
             "Или выбрать цель явно:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
+        "posting_state.target.ready": (
+            "Цель: bot {bot_alias} ({bot_username}), channel {channel_alias} ({channel_id})"
+        ),
+        "posting_state.target.missing": "Цель: bot/channel по умолчанию не настроены.",
+        "posting_state.target.stale": (
+            "Цель: bot/channel по умолчанию неполная, потому что один alias удалён."
+        ),
+        "posting_state.publish.short": "Опубликовать: !send {draft_id}",
+        "posting_state.publish.explicit": (
+            "Опубликовать: !send {draft_id} --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.default_recovery": (
+            "Задать цель по умолчанию: !default set --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.delete_hint": "Удалить: !draft delete {draft_id}",
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "Bot/channel по умолчанию не настроены. Задайте их командой:\n"

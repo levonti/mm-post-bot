@@ -841,6 +841,50 @@ async def test_draft_list_show_and_delete_only_use_own_draft_status(ctx: Command
     assert ctx.post_drafts.get_for_owner("alice-id", own.id).status == "deleted"
 
 
+async def test_draft_show_includes_ready_target_context(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!default set --bot news --channel town")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Release notes\nSecond line",
+        message_sha256=hash_message("Release notes\nSecond line"),
+    )
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {draft.id}")
+
+    assert reply is not None
+    assert f"Draft #{draft.id}" in reply
+    assert "Release notes\nSecond line" in reply
+    assert "Target: bot news (news-bot), channel town (channel-id)" in reply
+    assert f"Publish: !send {draft.id}" in reply
+    assert f"Delete: !draft delete {draft.id}" in reply
+
+
+async def test_draft_show_includes_missing_target_recovery(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Body without defaults",
+        message_sha256=hash_message("Body without defaults"),
+    )
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {draft.id}")
+
+    assert reply is not None
+    assert "Target: no default bot/channel configured" in reply
+    assert "!default set --bot <alias> --channel <channel_alias>" in reply
+    assert f"!send {draft.id} --bot <alias> --channel <channel_alias>" in reply
+
+
 @pytest.mark.parametrize(
     "command",
     ["!draft", "!draft cancel", "!draft list", "!draft show 1", "!draft delete 1"],
