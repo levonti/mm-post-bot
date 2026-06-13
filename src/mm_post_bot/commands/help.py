@@ -13,6 +13,8 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 ctx.t("help.core.help"),
                 ctx.t("help.core.register"),
                 ctx.t("help.core.status"),
+                ctx.t("help.core.setup"),
+                ctx.t("help.core.next"),
                 ctx.t("help.core.lang"),
             ],
         )

@@ -59,3 +59,70 @@ def publish_hint(ctx: CommandContext, draft_id: int, state: TargetState) -> str:
 
 def default_recovery(ctx: CommandContext) -> str:
     return ctx.t("posting_state.default_recovery")
+
+
+def user_status(ctx: CommandContext) -> str | None:
+    try:
+        return ctx.user_repo.get(ctx.caller_user_id).status
+    except LookupError:
+        return None
+
+
+def setup_next_command(ctx: CommandContext) -> str:
+    status = user_status(ctx)
+    if status is None:
+        return "!register"
+    if status == "pending":
+        return "!status"
+    if status == "blocked":
+        return "!status"
+    if status != "approved":
+        return "!status"
+    if not ctx.user_bot_repo.list_for_owner(ctx.caller_user_id):
+        return "!bot add <alias> <token>"
+    if not ctx.user_channel_repo.list_for_owner(ctx.caller_user_id):
+        return "!channel add <alias> <channel_id>"
+    state = target_state(ctx)
+    if state.status != "ready":
+        return "!default set --bot <alias> --channel <channel_alias>"
+    if not ctx.post_draft_repo.list_for_owner(ctx.caller_user_id):
+        return "!draft"
+    return "!draft list"
+
+
+def setup_lines(ctx: CommandContext) -> list[str]:
+    status = user_status(ctx)
+    bots = (
+        ctx.user_bot_repo.list_for_owner(ctx.caller_user_id)
+        if status == "approved"
+        else []
+    )
+    channels = (
+        ctx.user_channel_repo.list_for_owner(ctx.caller_user_id)
+        if status == "approved"
+        else []
+    )
+    state = target_state(ctx) if status == "approved" else TargetState(status="missing")
+    drafts = (
+        ctx.post_draft_repo.list_for_owner(ctx.caller_user_id)
+        if status == "approved"
+        else []
+    )
+    status_text = status if status is not None else "not registered"
+    bot_text = str(len(bots)) if bots else "none"
+    channel_text = str(len(channels)) if channels else "none"
+    if state.status == "ready":
+        default_text = f"{state.bot_alias} -> {state.channel_alias}"
+    elif state.status == "stale":
+        default_text = "stale"
+    else:
+        default_text = "none"
+    draft_text = str(len(drafts)) if drafts else "none"
+    return [
+        ctx.t("setup.registration", status=status_text),
+        ctx.t("setup.bots", count=bot_text),
+        ctx.t("setup.channels", count=channel_text),
+        ctx.t("setup.default", value=default_text),
+        ctx.t("setup.drafts", count=draft_text),
+        ctx.t("setup.next", command=setup_next_command(ctx)),
+    ]

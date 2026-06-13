@@ -38,6 +38,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.core.help": "!help - show available commands",
         "help.core.register": "!register - register for posting access",
         "help.core.status": "!status - show your registration status",
+        "help.core.setup": "!setup - show posting setup checklist",
+        "help.core.next": "!next - show the next recommended posting step",
         "help.core.lang": "!lang [en|ru] - show or change reply language",
         "help.admin_bootstrap.title": "Admin bootstrap",
         "help.admin_bootstrap.configured": "You are configured as an admin in MM_ADMINS.",
@@ -175,6 +177,14 @@ CATALOG: dict[str, dict[str, str]] = {
             "Set a default with: !default set --bot <alias> --channel <channel_alias>"
         ),
         "posting_state.delete_hint": "Delete: !draft delete {draft_id}",
+        "setup.usage": "Usage: !setup",
+        "next.usage": "Usage: !next",
+        "setup.registration": "Registration: {status}",
+        "setup.bots": "Posting bots: {count}",
+        "setup.channels": "Channels: {count}",
+        "setup.default": "Default: {value}",
+        "setup.drafts": "Drafts: {count}",
+        "setup.next": "Next: {command}",
         "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "No default bot/channel configured. Set one with:\n"
@@ -251,6 +261,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.core.help": "!help - показать доступные команды",
         "help.core.register": "!register - запросить доступ к постингу",
         "help.core.status": "!status - показать статус регистрации",
+        "help.core.setup": "!setup - показать checklist настройки постинга",
+        "help.core.next": "!next - показать следующий рекомендуемый шаг",
         "help.core.lang": "!lang [en|ru] - показать или изменить язык ответов",
         "help.admin_bootstrap.title": "Старт администратора",
         "help.admin_bootstrap.configured": "Вы указаны как администратор в MM_ADMINS.",
@@ -391,6 +403,14 @@ CATALOG: dict[str, dict[str, str]] = {
             "Задать цель по умолчанию: !default set --bot <alias> --channel <channel_alias>"
         ),
         "posting_state.delete_hint": "Удалить: !draft delete {draft_id}",
+        "setup.usage": "Использование: !setup",
+        "next.usage": "Использование: !next",
+        "setup.registration": "Регистрация: {status}",
+        "setup.bots": "Posting-боты: {count}",
+        "setup.channels": "Каналы: {count}",
+        "setup.default": "По умолчанию: {value}",
+        "setup.drafts": "Черновики: {count}",
+        "setup.next": "Дальше: {command}",
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "Bot/channel по умолчанию не настроены. Задайте их командой:\n"

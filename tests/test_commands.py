@@ -489,6 +489,95 @@ async def test_status_uses_selected_locale(ctx: CommandFixture):
     assert reply == "alice: статус pending, роль user."
 
 
+async def test_setup_guides_unregistered_user(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert reply is not None
+    assert "Registration: not registered" in reply
+    assert "Next: !register" in reply
+    assert next_reply is not None
+    assert next_reply == "Next: !register"
+
+
+async def test_setup_guides_partially_configured_approved_user(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+
+    setup_reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert setup_reply is not None
+    assert "Posting bots: 1" in setup_reply
+    assert "Channels: none" in setup_reply
+    assert "Next: !channel add <alias> <channel_id>" in setup_reply
+    assert next_reply is not None
+    assert next_reply == "Next: !channel add <alias> <channel_id>"
+
+
+async def test_setup_guides_fully_configured_user_to_draft(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+
+    setup_reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert setup_reply is not None
+    assert "Default: news -> town" in setup_reply
+    assert "Next: !draft" in setup_reply
+    assert next_reply is not None
+    assert next_reply == "Next: !draft"
+
+
+async def test_setup_guides_fully_configured_user_with_saved_draft_to_draft_list(
+    ctx: CommandFixture,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+    ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Saved post body",
+        message_sha256=hash_message("Saved post body"),
+    )
+
+    setup_reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert setup_reply is not None
+    assert "Drafts: 1" in setup_reply
+    assert "Next: !draft list" in setup_reply
+    assert next_reply is not None
+    assert next_reply == "Next: !draft list"
+
+
 async def test_admin_lists_pending_users(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     await dispatch(ctx.make("bob-id", "bob"), "!register")
