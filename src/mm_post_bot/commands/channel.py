@@ -36,7 +36,7 @@ async def add_current(ctx: CommandContext, args: ParsedArgs) -> str:
     if access_error is not None:
         return access_error
 
-    if ctx.channel_type == "D":
+    if ctx.channel_type not in {"O", "P"} or not ctx.channel_id:
         return ctx.t("channel.add_current_channel_only")
 
     if len(args.positional) != 1:

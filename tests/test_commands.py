@@ -497,7 +497,8 @@ async def test_setup_guides_unregistered_user(ctx: CommandFixture):
     assert "Registration: not registered" in reply
     assert "Next: !register" in reply
     assert next_reply is not None
-    assert next_reply == "Next: !register"
+    assert "Next: !register" in next_reply
+    assert "Register first" in next_reply
 
 
 async def test_setup_guides_partially_configured_approved_user(ctx: CommandFixture):
@@ -518,7 +519,8 @@ async def test_setup_guides_partially_configured_approved_user(ctx: CommandFixtu
     assert "Channels: none" in setup_reply
     assert "Next: !channel add <alias> <channel_id>" in setup_reply
     assert next_reply is not None
-    assert next_reply == "Next: !channel add <alias> <channel_id>"
+    assert "Next: !channel add <alias> <channel_id>" in next_reply
+    assert "Add a channel alias" in next_reply
 
 
 async def test_setup_guides_fully_configured_user_to_draft(ctx: CommandFixture):
@@ -543,7 +545,8 @@ async def test_setup_guides_fully_configured_user_to_draft(ctx: CommandFixture):
     assert "Default: news -> town" in setup_reply
     assert "Next: !draft" in setup_reply
     assert next_reply is not None
-    assert next_reply == "Next: !draft"
+    assert "Next: !draft" in next_reply
+    assert "Start draft capture" in next_reply
 
 
 async def test_setup_guides_fully_configured_user_with_saved_draft_to_draft_list(
@@ -575,7 +578,8 @@ async def test_setup_guides_fully_configured_user_with_saved_draft_to_draft_list
     assert "Drafts: 1" in setup_reply
     assert "Next: !draft list" in setup_reply
     assert next_reply is not None
-    assert next_reply == "Next: !draft list"
+    assert "Next: !draft list" in next_reply
+    assert "Review saved drafts" in next_reply
 
 
 async def test_setup_commands_require_dm_without_leaking_setup_state(ctx: CommandFixture):
@@ -1179,6 +1183,52 @@ async def test_channel_add_current_saves_current_channel_id(ctx: CommandFixture)
     assert "added" in reply.lower()
     saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
     assert saved.channel_id == "current-channel-id"
+
+
+async def test_channel_add_current_saves_private_channel_id(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    channel_ctx = replace(
+        ctx.make("alice-id", "alice", channel_type="P"),
+        channel_id="private-channel-id",
+    )
+
+    reply = await dispatch(channel_ctx, "!channel add-current private")
+
+    assert reply is not None
+    assert "added" in reply.lower()
+    saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "private")
+    assert saved.channel_id == "private-channel-id"
+
+
+@pytest.mark.parametrize("channel_type", ["D", "G", None])
+async def test_channel_add_current_rejects_non_channel_contexts(
+    ctx: CommandFixture,
+    channel_type: str | None,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    command_ctx = ctx.make("alice-id", "alice", channel_type=channel_type)
+
+    reply = await dispatch(command_ctx, "!channel add-current town")
+
+    assert reply is not None
+    assert "Run this from the Mattermost channel" in reply
+    with pytest.raises(LookupError):
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
+async def test_channel_add_current_rejects_empty_current_channel_id(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    channel_ctx = replace(ctx.make("alice-id", "alice", channel_type="O"), channel_id="")
+
+    reply = await dispatch(channel_ctx, "!channel add-current town")
+
+    assert reply is not None
+    assert "Run this from the Mattermost channel" in reply
+    with pytest.raises(LookupError):
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
 
 
 async def test_channel_add_current_rejects_dm_duplicate_and_unapproved_user(

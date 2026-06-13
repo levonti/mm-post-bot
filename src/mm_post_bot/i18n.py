@@ -190,6 +190,13 @@ CATALOG: dict[str, dict[str, str]] = {
         "setup.default": "Default: {value}",
         "setup.drafts": "Drafts: {count}",
         "setup.next": "Next: {command}",
+        "next.context.register": "Register first so an admin can approve posting access.",
+        "next.context.status": "Check your access status before continuing.",
+        "next.context.bot": "Add a posting bot alias before you can publish.",
+        "next.context.channel": "Add a channel alias so posts have a destination.",
+        "next.context.default": "Set a default target to enable the short send command.",
+        "next.context.draft": "Start draft capture when you are ready to write the post.",
+        "next.context.draft_list": "Review saved drafts before publishing or deleting them.",
         "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "No default bot/channel configured.\n"
@@ -428,6 +435,13 @@ CATALOG: dict[str, dict[str, str]] = {
         "setup.default": "По умолчанию: {value}",
         "setup.drafts": "Черновики: {count}",
         "setup.next": "Дальше: {command}",
+        "next.context.register": "Сначала зарегистрируйтесь, чтобы админ открыл доступ.",
+        "next.context.status": "Проверьте статус доступа перед продолжением.",
+        "next.context.bot": "Добавьте bot alias, чтобы потом публиковать посты.",
+        "next.context.channel": "Добавьте channel alias, чтобы постам было куда отправляться.",
+        "next.context.default": "Задайте цель по умолчанию для короткой команды отправки.",
+        "next.context.draft": "Начните черновик, когда будете готовы написать пост.",
+        "next.context.draft_list": "Проверьте сохранённые черновики перед публикацией или удалением.",
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "Bot/channel по умолчанию не настроены.\n"

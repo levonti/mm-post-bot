@@ -90,6 +90,18 @@ def setup_next_command(ctx: CommandContext) -> str:
     return "!draft list"
 
 
+def setup_next_context_key(command: str) -> str:
+    return {
+        "!register": "next.context.register",
+        "!status": "next.context.status",
+        "!bot add <alias> <token>": "next.context.bot",
+        "!channel add <alias> <channel_id>": "next.context.channel",
+        "!default set --bot <alias> --channel <channel_alias>": "next.context.default",
+        "!draft": "next.context.draft",
+        "!draft list": "next.context.draft_list",
+    }.get(command, "next.context.default")
+
+
 def setup_lines(ctx: CommandContext) -> list[str]:
     status = user_status(ctx)
     bots = (
