@@ -441,7 +441,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "next.context.channel": "Добавьте channel alias, чтобы постам было куда отправляться.",
         "next.context.default": "Задайте цель по умолчанию для короткой команды отправки.",
         "next.context.draft": "Начните черновик, когда будете готовы написать пост.",
-        "next.context.draft_list": "Проверьте сохранённые черновики перед публикацией или удалением.",
+        "next.context.draft_list": (
+            "Проверьте сохранённые черновики перед публикацией или удалением."
+        ),
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
             "Bot/channel по умолчанию не настроены.\n"
