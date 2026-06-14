@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ locale|default('en') }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,13 +10,28 @@
     <header class="topbar">
       <a class="brand" href="/">mm-post-bot</a>
       {% if session %}
-        <nav class="primary-nav" aria-label="Primary">
-          <a class="{% if active_page == 'composer' %}active{% endif %}" href="/">Composer</a>
-          <a class="{% if active_page == 'drafts' %}active{% endif %}" href="/drafts">Drafts</a>
-          <a class="{% if active_page == 'targets' %}active{% endif %}" href="/targets">Targets</a>
-          <a class="{% if active_page == 'audit' %}active{% endif %}" href="/audit">Audit</a>
+        <nav class="primary-nav" aria-label="{{ t('web.nav.primary') }}">
+          <a class="{% if active_page == 'composer' %}active{% endif %}" href="/">{{ t("web.nav.composer") }}</a>
+          <a class="{% if active_page == 'drafts' %}active{% endif %}" href="/drafts">{{ t("web.nav.drafts") }}</a>
+          <a class="{% if active_page == 'targets' %}active{% endif %}" href="/targets">{{ t("web.nav.targets") }}</a>
+          <a class="{% if active_page == 'audit' %}active{% endif %}" href="/audit">{{ t("web.nav.audit") }}</a>
         </nav>
-        <div class="user-chip">{{ session.username }}</div>
+        <div class="topbar-actions">
+          <form class="language-form" action="/language" method="post">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="next" value="{{ current_path }}">
+            <label class="sr-only" for="locale">{{ t("web.language.label") }}</label>
+            <select id="locale" name="locale" aria-label="{{ t('web.language.label') }}">
+              {% for option_locale in supported_locales %}
+                <option value="{{ option_locale }}" {% if option_locale == locale %}selected{% endif %}>
+                  {{ t("web.language." ~ option_locale) }}
+                </option>
+              {% endfor %}
+            </select>
+            <button type="submit">{{ t("web.language.apply") }}</button>
+          </form>
+          <div class="user-chip">{{ session.username }}</div>
+        </div>
       {% endif %}
     </header>
     <main class="shell">

@@ -3,28 +3,40 @@
 {% block content %}
   <section class="workspace-header">
     <div>
-      <p class="eyebrow">Targets</p>
-      <h1>Posting targets</h1>
+      <p class="eyebrow">{{ t("web.targets.eyebrow") }}</p>
+      <h1>{{ t("web.targets.heading") }}</h1>
     </div>
     <div class="workspace-meta">
-      <span>{{ bots|length }} bot{% if bots|length != 1 %}s{% endif %}</span>
-      <span>{{ channels|length }} channel{% if channels|length != 1 %}s{% endif %}</span>
+      <span>
+        {% if bots|length == 1 %}
+          {{ t("web.targets.bots_count_one", count=bots|length) }}
+        {% else %}
+          {{ t("web.targets.bots_count_many", count=bots|length) }}
+        {% endif %}
+      </span>
+      <span>
+        {% if channels|length == 1 %}
+          {{ t("web.targets.channels_count_one", count=channels|length) }}
+        {% else %}
+          {{ t("web.targets.channels_count_many", count=channels|length) }}
+        {% endif %}
+      </span>
     </div>
   </section>
 
-  <section class="target-status" aria-label="Default target">
+  <section class="target-status" aria-label="{{ t('web.targets.default_aria') }}">
     {% if default %}
-      <p>Default: {{ default.bot.alias }} -> {{ default.channel.alias }}</p>
+      <p>{{ t("web.targets.default_current", bot_alias=default.bot.alias, channel_alias=default.channel.alias) }}</p>
     {% elif stale_default %}
-      <p>Default target is missing because its bot or channel was removed.</p>
+      <p>{{ t("web.targets.default_stale") }}</p>
     {% else %}
-      <p>No default target selected.</p>
+      <p>{{ t("web.targets.default_none") }}</p>
     {% endif %}
   </section>
 
   <section class="target-layout">
     <div class="target-column">
-      <h2>Bots</h2>
+      <h2>{{ t("web.targets.bots") }}</h2>
       {% if bots %}
         <ul class="target-list">
           {% for bot in bots %}
@@ -35,12 +47,12 @@
           {% endfor %}
         </ul>
       {% else %}
-        <p class="muted-text">No posting bots yet.</p>
+        <p class="muted-text">{{ t("web.targets.no_bots") }}</p>
       {% endif %}
     </div>
 
     <div class="target-column">
-      <h2>Channels</h2>
+      <h2>{{ t("web.targets.channels") }}</h2>
       {% if channels %}
         <ul class="target-list">
           {% for channel in channels %}
@@ -51,35 +63,35 @@
           {% endfor %}
         </ul>
       {% else %}
-        <p class="muted-text">No channels yet.</p>
+        <p class="muted-text">{{ t("web.targets.no_channels") }}</p>
       {% endif %}
       <p class="target-hint">@postbot !channel add-current &lt;alias&gt;</p>
     </div>
 
     <div class="target-column">
-      <h2>Default</h2>
+      <h2>{{ t("web.targets.default") }}</h2>
       <form class="target-form" action="/targets/default" method="post">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <label for="bot_alias">Bot alias</label>
+        <label for="bot_alias">{{ t("web.targets.bot_alias") }}</label>
         <select id="bot_alias" name="bot_alias" required>
           {% for bot in bots %}
             <option value="{{ bot.alias }}" {% if default and default.bot.alias == bot.alias %}selected{% endif %}>{{ bot.alias }}</option>
           {% endfor %}
         </select>
 
-        <label for="channel_alias">Channel alias</label>
+        <label for="channel_alias">{{ t("web.targets.channel_alias") }}</label>
         <select id="channel_alias" name="channel_alias" required>
           {% for channel in channels %}
             <option value="{{ channel.alias }}" {% if default and default.channel.alias == channel.alias %}selected{% endif %}>{{ channel.alias }}</option>
           {% endfor %}
         </select>
 
-        <button type="submit" {% if not bots or not channels %}disabled{% endif %}>Set default</button>
+        <button type="submit" {% if not bots or not channels %}disabled{% endif %}>{{ t("web.targets.set_default") }}</button>
       </form>
 
       <form class="target-clear-form" action="/targets/default/clear" method="post">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <button class="danger-button" type="submit" {% if not default and not stale_default %}disabled{% endif %}>Clear default</button>
+        <button class="danger-button" type="submit" {% if not default and not stale_default %}disabled{% endif %}>{{ t("web.targets.clear_default") }}</button>
       </form>
     </div>
   </section>

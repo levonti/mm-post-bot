@@ -1,7 +1,8 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from secrets import token_urlsafe
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
@@ -9,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..commands.context import CommandContext
 from ..db import DbConn
-from ..i18n import FALLBACK_LOCALE, normalize_locale
+from ..i18n import FALLBACK_LOCALE, SUPPORTED_LOCALES, normalize_locale, translate
 from ..mm_client import MattermostClient
 from ..repository import DraftCaptureRepo, PostDraft, UserPreferenceRepo
 from ..services.posting import (
@@ -26,6 +27,85 @@ from .deps import SESSION_COOKIE, csrf_token, current_session, repos, require_cs
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+WEB_LOCALES = tuple(sorted(SUPPORTED_LOCALES))
+
+
+def _default_locale(request: Request) -> str:
+    return normalize_locale(settings(request).default_locale) or FALLBACK_LOCALE
+
+
+def _session_locale(request: Request, session: WebSession) -> str:
+    conn = cast(DbConn, request.app.state.conn)
+    user_preference_repo = UserPreferenceRepo(conn)
+    return user_preference_repo.get_locale(session.user_id) or _default_locale(request)
+
+
+def _translator(locale: str) -> Callable[..., str]:
+    def t(key: str, **params: Any) -> str:
+        return translate(locale, key, **params)
+
+    return t
+
+
+def _safe_next_path(next_path: str) -> str:
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        return "/"
+    return next_path
+
+
+def _request_path(request: Request) -> str:
+    path = request.url.path
+    if request.url.query:
+        return f"{path}?{request.url.query}"
+    return path
+
+
+def _base_context(
+    request: Request,
+    *,
+    locale: str,
+    title_key: str,
+    title_params: dict[str, Any] | None = None,
+    session: WebSession | None = None,
+    csrf: str | None = None,
+    active_page: str | None = None,
+) -> dict[str, Any]:
+    t = _translator(locale)
+    return {
+        "title": t(title_key, **(title_params or {})),
+        "session": session,
+        "csrf_token": csrf,
+        "active_page": active_page,
+        "locale": locale,
+        "supported_locales": WEB_LOCALES,
+        "current_path": _request_path(request),
+        "t": t,
+    }
+
+
+def _authenticated_context(
+    request: Request,
+    *,
+    session: WebSession,
+    csrf: str,
+    active_page: str,
+    title_key: str,
+    title_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _base_context(
+        request,
+        locale=_session_locale(request, session),
+        title_key=title_key,
+        title_params=title_params,
+        session=session,
+        csrf=csrf,
+        active_page=active_page,
+    )
+
+
+def _web_error(request: Request, session: WebSession | None, key: str) -> str:
+    locale = _session_locale(request, session) if session is not None else _default_locale(request)
+    return translate(locale, f"web.error.{key}")
 
 
 def _command_context(request: Request, session: WebSession) -> CommandContext:
@@ -71,9 +151,12 @@ def _draft_or_404(request: Request, session: WebSession, draft_id: int) -> PostD
     try:
         draft = repos(request).post_drafts.get_for_owner(session.user_id, draft_id)
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail="Draft not found") from exc
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "draft_not_found"),
+        ) from exc
     if draft.status != "draft":
-        raise HTTPException(status_code=404, detail="Draft not found")
+        raise HTTPException(status_code=404, detail=_web_error(request, session, "draft_not_found"))
     return draft
 
 
@@ -84,14 +167,17 @@ def _optional_alias(value: str) -> str | None:
 
 @router.get("/login-required")
 def login_required(request: Request) -> Response:
+    locale = _default_locale(request)
+    context = _base_context(
+        request,
+        locale=locale,
+        title_key="web.login_required.title",
+    )
+    context["content"] = context["t"]("web.login_required.content")
     return templates.TemplateResponse(
         request=request,
         name="base.html",
-        context={
-            "title": "Login required",
-            "session": None,
-            "content": "Open a fresh login link from Mattermost to use the web composer.",
-        },
+        context=context,
         status_code=401,
     )
 
@@ -105,11 +191,11 @@ def login(request: Request, token: Annotated[str, Query(min_length=1)]) -> Respo
         now=datetime.now(UTC),
     )
     if login_token is None:
-        raise HTTPException(status_code=400, detail="Login link is invalid or expired")
+        raise HTTPException(status_code=400, detail=_web_error(request, None, "login_invalid"))
 
     user = repo_set.users.get(login_token.owner_user_id)
     if user.status != "approved":
-        raise HTTPException(status_code=403, detail="User is not approved")
+        raise HTTPException(status_code=403, detail=_web_error(request, None, "user_not_approved"))
 
     cookie_value = sign_session(
         cfg.web_session_secret.get_secret_value(),
@@ -129,22 +215,43 @@ def login(request: Request, token: Annotated[str, Query(min_length=1)]) -> Respo
     return response
 
 
+@router.post("/language")
+def set_language(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    locale: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    next_path: Annotated[str, Form(alias="next")] = "/",
+) -> Response:
+    normalized = normalize_locale(locale)
+    if normalized is None:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "unsupported_language"),
+        )
+    conn = cast(DbConn, request.app.state.conn)
+    UserPreferenceRepo(conn).set_locale(session.user_id, normalized)
+    return RedirectResponse(_safe_next_path(next_path), status_code=303)
+
+
 @router.get("/")
 def home(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
 ) -> Response:
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="composer",
+        title_key="web.page.composer",
+    )
+    context["draft_message"] = ""
     return templates.TemplateResponse(
         request=request,
         name="composer.html",
-        context={
-            "title": "Composer",
-            "session": session,
-            "csrf_token": csrf,
-            "active_page": "composer",
-            "draft_message": "",
-        },
+        context=context,
     )
 
 
@@ -159,7 +266,10 @@ async def save_draft(
     try:
         create_draft(ctx, message)
     except DraftMessageEmpty as exc:
-        raise HTTPException(status_code=400, detail="Draft message cannot be empty") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "draft_empty"),
+        ) from exc
     finally:
         await ctx.manager_mm.aclose()
     return RedirectResponse("/drafts", status_code=303)
@@ -169,17 +279,21 @@ async def save_draft(
 def draft_list(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
+    csrf: Annotated[str, Depends(csrf_token)],
 ) -> Response:
     drafts = repos(request).post_drafts.list_for_owner(session.user_id)
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="drafts",
+        title_key="web.page.drafts",
+    )
+    context["drafts"] = drafts
     return templates.TemplateResponse(
         request=request,
         name="drafts.html",
-        context={
-            "title": "Drafts",
-            "session": session,
-            "active_page": "drafts",
-            "drafts": drafts,
-        },
+        context=context,
     )
 
 
@@ -187,17 +301,21 @@ def draft_list(
 def audit(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
+    csrf: Annotated[str, Depends(csrf_token)],
 ) -> Response:
     records = repos(request).audits.list_for_user(session.user_id, limit=50)
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="audit",
+        title_key="web.page.audit",
+    )
+    context["records"] = records
     return templates.TemplateResponse(
         request=request,
         name="audit.html",
-        context={
-            "title": "Audit",
-            "session": session,
-            "active_page": "audit",
-            "records": records,
-        },
+        context=context,
     )
 
 
@@ -210,19 +328,25 @@ def targets(
     repo_set = repos(request)
     default = repo_set.user_post_defaults.get_for_owner(session.user_id)
     stale_default = default is None and repo_set.user_post_defaults.has_for_owner(session.user_id)
-    return templates.TemplateResponse(
-        request=request,
-        name="targets.html",
-        context={
-            "title": "Targets",
-            "session": session,
-            "csrf_token": csrf,
-            "active_page": "targets",
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="targets",
+        title_key="web.page.targets",
+    )
+    context.update(
+        {
             "bots": repo_set.user_bots.list_for_owner(session.user_id),
             "channels": repo_set.user_channels.list_for_owner(session.user_id),
             "default": default,
             "stale_default": stale_default,
-        },
+        }
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="targets.html",
+        context=context,
     )
 
 
@@ -241,7 +365,10 @@ def set_default_target(
             channel_alias=channel_alias,
         )
     except LookupError as exc:
-        raise HTTPException(status_code=400, detail="Target aliases are invalid") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "target_aliases_invalid"),
+        ) from exc
     return RedirectResponse("/targets", status_code=303)
 
 
@@ -263,16 +390,19 @@ def draft_detail(
     draft_id: int,
 ) -> Response:
     draft = _draft_or_404(request, session, draft_id)
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="drafts",
+        title_key="web.page.draft_detail",
+        title_params={"draft_id": draft.id},
+    )
+    context["draft"] = draft
     return templates.TemplateResponse(
         request=request,
         name="draft_detail.html",
-        context={
-            "title": f"Draft {draft.id}",
-            "session": session,
-            "active_page": "drafts",
-            "csrf_token": csrf,
-            "draft": draft,
-        },
+        context=context,
     )
 
 
@@ -288,9 +418,15 @@ async def update_draft(
     try:
         update_draft_message(ctx, draft_id, message)
     except DraftMessageEmpty as exc:
-        raise HTTPException(status_code=400, detail="Draft message cannot be empty") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "draft_empty"),
+        ) from exc
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail="Draft not found") from exc
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "draft_not_found"),
+        ) from exc
     finally:
         await ctx.manager_mm.aclose()
     return RedirectResponse(f"/drafts/{draft_id}", status_code=303)
@@ -318,7 +454,7 @@ async def publish_draft_from_web(
             ),
         )
     except PublishError as exc:
-        raise HTTPException(status_code=400, detail=exc.code) from exc
+        raise HTTPException(status_code=400, detail=_web_error(request, session, exc.code)) from exc
     finally:
         await ctx.manager_mm.aclose()
     return RedirectResponse("/audit", status_code=303)

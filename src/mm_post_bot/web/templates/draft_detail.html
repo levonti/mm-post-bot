@@ -3,38 +3,38 @@
 {% block content %}
   <section class="workspace-header">
     <div>
-      <p class="eyebrow">Draft #{{ draft.id }}</p>
-      <h1>Edit draft</h1>
+      <p class="eyebrow">{{ t("web.draft_detail.eyebrow", draft_id=draft.id) }}</p>
+      <h1>{{ t("web.draft_detail.heading") }}</h1>
     </div>
     <div class="workspace-meta">
-      <span>Created {{ draft.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
-      <span>Updated {{ draft.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+      <span>{{ t("web.draft_detail.created", timestamp=draft.created_at.strftime("%Y-%m-%d %H:%M")) }}</span>
+      <span>{{ t("web.draft_detail.updated", timestamp=draft.updated_at.strftime("%Y-%m-%d %H:%M")) }}</span>
     </div>
   </section>
 
   <section class="composer-layout">
     <form class="composer-form" action="/drafts/{{ draft.id }}" method="post">
       <input type="hidden" name="csrf" value="{{ csrf_token }}">
-      <label for="message">Message</label>
+      <label for="message">{{ t("web.composer.message") }}</label>
       <textarea id="message" name="message" rows="14">{{ draft.message }}</textarea>
       <div class="form-actions split-actions">
-        <a class="secondary-link" href="/drafts">Back to drafts</a>
-        <button type="submit">Save changes</button>
+        <a class="secondary-link" href="/drafts">{{ t("web.draft_detail.back") }}</a>
+        <button type="submit">{{ t("web.draft_detail.save") }}</button>
       </div>
     </form>
-    <aside class="side-panel" aria-label="Draft actions">
-      <h2>Actions</h2>
+    <aside class="side-panel" aria-label="{{ t('web.draft_detail.actions_aria') }}">
+      <h2>{{ t("web.draft_detail.actions") }}</h2>
       <form class="publish-form" action="/drafts/{{ draft.id }}/publish" method="post">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <label for="bot_alias">Bot alias</label>
-        <input id="bot_alias" name="bot_alias" type="text" placeholder="Use default">
-        <label for="channel_alias">Channel alias</label>
-        <input id="channel_alias" name="channel_alias" type="text" placeholder="Use default">
-        <button type="submit">Publish</button>
+        <label for="bot_alias">{{ t("web.draft_detail.bot_alias") }}</label>
+        <input id="bot_alias" name="bot_alias" type="text" placeholder="{{ t('web.draft_detail.use_default') }}">
+        <label for="channel_alias">{{ t("web.draft_detail.channel_alias") }}</label>
+        <input id="channel_alias" name="channel_alias" type="text" placeholder="{{ t('web.draft_detail.use_default') }}">
+        <button type="submit">{{ t("web.draft_detail.publish") }}</button>
       </form>
       <form action="/drafts/{{ draft.id }}/delete" method="post">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <button class="danger-button" type="submit">Delete draft</button>
+        <button class="danger-button" type="submit">{{ t("web.draft_detail.delete") }}</button>
       </form>
     </aside>
   </section>

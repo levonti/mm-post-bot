@@ -3,23 +3,29 @@
 {% block content %}
   <section class="workspace-header">
     <div>
-      <p class="eyebrow">Drafts</p>
-      <h1>Saved drafts</h1>
+      <p class="eyebrow">{{ t("web.drafts.eyebrow") }}</p>
+      <h1>{{ t("web.drafts.heading") }}</h1>
     </div>
     <div class="workspace-meta">
-      <span>{{ drafts|length }} draft{% if drafts|length != 1 %}s{% endif %}</span>
+      <span>
+        {% if drafts|length == 1 %}
+          {{ t("web.drafts.count_one", count=drafts|length) }}
+        {% else %}
+          {{ t("web.drafts.count_many", count=drafts|length) }}
+        {% endif %}
+      </span>
     </div>
   </section>
 
   {% if drafts %}
-    <section class="data-panel" aria-label="Saved drafts">
+    <section class="data-panel" aria-label="{{ t('web.drafts.aria') }}">
       <table class="data-table">
         <thead>
           <tr>
-            <th scope="col">ID</th>
-            <th scope="col">Preview</th>
-            <th scope="col">Created</th>
-            <th scope="col">Action</th>
+            <th scope="col">{{ t("web.drafts.table.id") }}</th>
+            <th scope="col">{{ t("web.drafts.table.preview") }}</th>
+            <th scope="col">{{ t("web.drafts.table.created") }}</th>
+            <th scope="col">{{ t("web.drafts.table.action") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -28,7 +34,7 @@
               <td>#{{ draft.id }}</td>
               <td class="preview-cell">{{ draft.message.splitlines()[0] if draft.message.splitlines() else draft.message }}</td>
               <td>{{ draft.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-              <td><a class="text-action" href="/drafts/{{ draft.id }}">Open</a></td>
+              <td><a class="text-action" href="/drafts/{{ draft.id }}">{{ t("web.drafts.open") }}</a></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -36,9 +42,9 @@
     </section>
   {% else %}
     <section class="empty-state">
-      <h2>No drafts yet</h2>
-      <p>Saved composer drafts will appear here.</p>
-      <a class="button-link" href="/">New draft</a>
+      <h2>{{ t("web.drafts.empty.title") }}</h2>
+      <p>{{ t("web.drafts.empty.body") }}</p>
+      <a class="button-link" href="/">{{ t("web.drafts.empty.action") }}</a>
     </section>
   {% endif %}
 {% endblock %}

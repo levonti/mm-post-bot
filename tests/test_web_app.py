@@ -107,6 +107,140 @@ def test_home_renders_workspace_after_login(ctx, web_settings):
     assert "Audit" in response.text
 
 
+def test_web_uses_stored_russian_locale(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_preferences.set_locale("alice-id", "ru")
+    ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Русский черновик",
+        message_sha256="hash",
+    )
+    ctx.audits.record(
+        caller_user_id="alice-id",
+        caller_username="alice",
+        draft_id=10,
+        user_bot_id=None,
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        channel_link="town",
+        resolved_channel_id="channel-id",
+        resolved_team_name=None,
+        resolved_channel_name=None,
+        message_sha256="hash",
+        status="success",
+        mattermost_post_id="post-id",
+        error_code=None,
+        error_message=None,
+    )
+    ctx.user_bots.add(
+        owner_user_id="alice-id",
+        alias="news",
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext="cipher",
+        token_fingerprint="fp",
+    )
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    draft = ctx.post_drafts.list_for_owner("alice-id")[0]
+
+    home = client.get("/")
+    drafts = client.get("/drafts")
+    targets = client.get("/targets")
+    audit = client.get("/audit")
+    detail = client.get(f"/drafts/{draft.id}")
+
+    assert home.status_code == 200
+    assert '<html lang="ru">' in home.text
+    assert "Новый пост Mattermost" in home.text
+    assert "Сохранить черновик" in home.text
+    assert "Язык" in home.text
+
+    assert drafts.status_code == 200
+    assert "Сохранённые черновики" in drafts.text
+    assert "Открыть" in drafts.text
+
+    assert targets.status_code == 200
+    assert "Цели публикации" in targets.text
+    assert "Цель по умолчанию не выбрана." in targets.text
+
+    assert audit.status_code == 200
+    assert "Активность" in audit.text
+    assert "Последние 50 записей" in audit.text
+
+    assert detail.status_code == 200
+    assert "Редактировать черновик" in detail.text
+    assert "Опубликовать" in detail.text
+
+
+def test_login_required_uses_default_locale(ctx, web_settings):
+    ru_settings = web_settings.model_copy(update={"default_locale": "ru"})
+    app = create_app(settings=ru_settings, conn=ctx.conn)
+    client = TestClient(app)
+
+    response = client.get("/login-required")
+
+    assert response.status_code == 401
+    assert '<html lang="ru">' in response.text
+    assert "Требуется вход" in response.text
+    assert "Откройте свежую ссылку входа из Mattermost" in response.text
+
+
+def test_language_switcher_updates_shared_preference(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/").text)
+
+    response = client.post(
+        "/language",
+        data={"csrf": csrf, "locale": "ru", "next": "/targets"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/targets"
+    assert ctx.user_preferences.get_locale("alice-id") == "ru"
+    targets = client.get("/targets")
+    assert "Цели публикации" in targets.text
+
+
+def test_language_switcher_rejects_unknown_locale(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/").text)
+
+    response = client.post(
+        "/language",
+        data={"csrf": csrf, "locale": "de", "next": "/"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported language" in response.text
+    assert ctx.user_preferences.get_locale("alice-id") is None
+
+
+def test_language_switcher_sanitizes_unsafe_next(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/").text)
+
+    response = client.post(
+        "/language",
+        data={"csrf": csrf, "locale": "ru", "next": "//evil.test/path"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert ctx.user_preferences.get_locale("alice-id") == "ru"
+
+
 def test_composer_saves_draft(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -302,7 +436,7 @@ def test_targets_page_lists_aliases_and_default(ctx, web_settings):
     assert response.status_code == 200
     assert "news-bot" in response.text
     assert "town" in response.text
-    assert "Default: news -> town" in response.text
+    assert "Default: news -&gt; town" in response.text
     assert "@postbot !channel add-current &lt;alias&gt;" in response.text
 
 

@@ -3,26 +3,26 @@
 {% block content %}
   <section class="workspace-header">
     <div>
-      <p class="eyebrow">Recent activity</p>
-      <h1>Audit</h1>
+      <p class="eyebrow">{{ t("web.audit.eyebrow") }}</p>
+      <h1>{{ t("web.audit.heading") }}</h1>
     </div>
     <div class="workspace-meta">
-      <span>Last 50 records</span>
+      <span>{{ t("web.audit.last_records") }}</span>
     </div>
   </section>
 
   {% if records %}
-    <section class="data-panel" aria-label="Audit records">
+    <section class="data-panel" aria-label="{{ t('web.audit.aria') }}">
       <table class="data-table audit-table">
         <thead>
           <tr>
-            <th>Created</th>
-            <th>Status</th>
-            <th>Draft</th>
-            <th>Bot</th>
-            <th>Channel</th>
-            <th>Post</th>
-            <th>Error</th>
+            <th>{{ t("web.audit.table.created") }}</th>
+            <th>{{ t("web.audit.table.status") }}</th>
+            <th>{{ t("web.audit.table.draft") }}</th>
+            <th>{{ t("web.audit.table.bot") }}</th>
+            <th>{{ t("web.audit.table.channel") }}</th>
+            <th>{{ t("web.audit.table.post") }}</th>
+            <th>{{ t("web.audit.table.error") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -58,8 +58,8 @@
     </section>
   {% else %}
     <section class="empty-state">
-      <h2>No audit records</h2>
-      <p>Published drafts and failed publish attempts will appear here.</p>
+      <h2>{{ t("web.audit.empty.title") }}</h2>
+      <p>{{ t("web.audit.empty.body") }}</p>
     </section>
   {% endif %}
 {% endblock %}
