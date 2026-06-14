@@ -7,6 +7,7 @@ from test_commands import ctx as _commands_ctx
 from test_commands import pg_conn as _commands_pg_conn
 
 from mm_post_bot.config import Settings
+from mm_post_bot.security import encrypt_token, hash_message
 from mm_post_bot.services.web_auth import create_login_token, hash_login_token
 from mm_post_bot.web.app import create_app
 
@@ -47,6 +48,20 @@ def _csrf_from(response_text: str) -> str:
     start = response_text.index(marker) + len(marker)
     end = response_text.index('"', start)
     return response_text[start:end]
+
+
+def _ready_target(ctx):
+    ctx.user_bots.add(
+        owner_user_id="alice-id",
+        alias="news",
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
+        token_fingerprint="fp",
+    )
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    ctx.user_post_defaults.set_for_owner("alice-id", bot_alias="news", channel_alias="town")
 
 
 def test_login_requires_valid_token(ctx, web_settings):
@@ -169,6 +184,60 @@ def test_draft_delete_marks_draft_deleted(ctx, web_settings):
     assert response.status_code == 303
     assert response.headers["location"] == "/drafts"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "deleted"
+
+
+def test_publish_draft_from_web(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    _ready_target(ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Publish from web",
+        message_sha256=hash_message("Publish from web"),
+    )
+    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+
+    response = client.post(
+        f"/drafts/{draft.id}/publish",
+        data={"csrf": csrf, "bot_alias": "", "channel_alias": ""},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/audit"
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "sent"
+    assert ctx.created_posts[0]["message"] == "Publish from web"
+
+
+def test_audit_page_lists_records(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.audits.record(
+        caller_user_id="alice-id",
+        caller_username="alice",
+        draft_id=10,
+        user_bot_id=None,
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        channel_link="town",
+        resolved_channel_id="channel-id",
+        resolved_team_name=None,
+        resolved_channel_name=None,
+        message_sha256="hash",
+        status="success",
+        mattermost_post_id="post-id",
+        error_code=None,
+        error_message=None,
+    )
+
+    response = client.get("/audit")
+
+    assert response.status_code == 200
+    assert "news-bot" in response.text
+    assert "post-id" in response.text
+    assert "success" in response.text
 
 
 def test_targets_page_lists_aliases_and_default(ctx, web_settings):

@@ -12,7 +12,14 @@ from ..db import DbConn
 from ..i18n import FALLBACK_LOCALE, normalize_locale
 from ..mm_client import MattermostClient
 from ..repository import DraftCaptureRepo, PostDraft, UserPreferenceRepo
-from ..services.posting import create_draft, update_draft_message
+from ..services.posting import (
+    PublishDraftRequest,
+    PublishError,
+    TargetRequest,
+    create_draft,
+    publish_draft,
+    update_draft_message,
+)
 from ..services.web_auth import WebSession, hash_login_token, sign_session
 from .deps import SESSION_COOKIE, csrf_token, current_session, repos, require_csrf, settings
 
@@ -67,6 +74,11 @@ def _draft_or_404(request: Request, session: WebSession, draft_id: int) -> PostD
     if draft.status != "draft":
         raise HTTPException(status_code=404, detail="Draft not found")
     return draft
+
+
+def _optional_alias(value: str) -> str | None:
+    normalized = value.strip()
+    return normalized or None
 
 
 @router.get("/login-required")
@@ -168,6 +180,24 @@ def draft_list(
     )
 
 
+@router.get("/audit")
+def audit(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+) -> Response:
+    records = repos(request).audits.list_for_user(session.user_id, limit=50)
+    return templates.TemplateResponse(
+        request=request,
+        name="audit.html",
+        context={
+            "title": "Audit",
+            "session": session,
+            "active_page": "audit",
+            "records": records,
+        },
+    )
+
+
 @router.get("/targets")
 def targets(
     request: Request,
@@ -256,6 +286,34 @@ async def update_draft(
     finally:
         await ctx.manager_mm.aclose()
     return RedirectResponse(f"/drafts/{draft_id}", status_code=303)
+
+
+@router.post("/drafts/{draft_id}/publish")
+async def publish_draft_from_web(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    _csrf: Annotated[None, Depends(require_csrf)],
+    bot_alias: Annotated[str, Form()] = "",
+    channel_alias: Annotated[str, Form()] = "",
+) -> Response:
+    ctx = _command_context(request, session)
+    try:
+        await publish_draft(
+            ctx,
+            PublishDraftRequest(
+                draft_id=draft_id,
+                target=TargetRequest(
+                    bot_alias=_optional_alias(bot_alias),
+                    channel_alias=_optional_alias(channel_alias),
+                ),
+            ),
+        )
+    except PublishError as exc:
+        raise HTTPException(status_code=400, detail=exc.code) from exc
+    finally:
+        await ctx.manager_mm.aclose()
+    return RedirectResponse("/audit", status_code=303)
 
 
 @router.post("/drafts/{draft_id}/delete")

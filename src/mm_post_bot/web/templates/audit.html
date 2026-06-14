@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="workspace-header">
+    <div>
+      <p class="eyebrow">Recent activity</p>
+      <h1>Audit</h1>
+    </div>
+    <div class="workspace-meta">
+      <span>Last 50 records</span>
+    </div>
+  </section>
+
+  {% if records %}
+    <section class="data-panel" aria-label="Audit records">
+      <table class="data-table audit-table">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Status</th>
+            <th>Draft</th>
+            <th>Bot</th>
+            <th>Channel</th>
+            <th>Post</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in records %}
+            <tr>
+              <td>{{ record.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td>
+                <span class="status-pill status-{{ record.status }}">{{ record.status }}</span>
+              </td>
+              <td>{% if record.draft_id is not none %}#{{ record.draft_id }}{% else %}-{% endif %}</td>
+              <td>{{ record.bot_username or record.bot_user_id or "-" }}</td>
+              <td>
+                <span>{{ record.channel_link }}</span>
+                {% if record.resolved_channel_id %}
+                  <span class="muted-block">{{ record.resolved_channel_id }}</span>
+                {% endif %}
+              </td>
+              <td>{{ record.mattermost_post_id or "-" }}</td>
+              <td>
+                {% if record.error_code or record.error_message %}
+                  <span>{{ record.error_code or "-" }}</span>
+                  {% if record.error_message %}
+                    <span class="muted-block">{{ record.error_message }}</span>
+                  {% endif %}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% else %}
+    <section class="empty-state">
+      <h2>No audit records</h2>
+      <p>Published drafts and failed publish attempts will appear here.</p>
+    </section>
+  {% endif %}
+{% endblock %}
