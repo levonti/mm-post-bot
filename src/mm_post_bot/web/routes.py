@@ -13,6 +13,7 @@ from ..i18n import FALLBACK_LOCALE, normalize_locale
 from ..mm_client import MattermostClient
 from ..repository import DraftCaptureRepo, PostDraft, UserPreferenceRepo
 from ..services.posting import (
+    DraftMessageEmpty,
     PublishDraftRequest,
     PublishError,
     TargetRequest,
@@ -157,6 +158,8 @@ async def save_draft(
     ctx = _command_context(request, session)
     try:
         create_draft(ctx, message)
+    except DraftMessageEmpty as exc:
+        raise HTTPException(status_code=400, detail="Draft message cannot be empty") from exc
     finally:
         await ctx.manager_mm.aclose()
     return RedirectResponse("/drafts", status_code=303)
@@ -231,11 +234,14 @@ def set_default_target(
     channel_alias: Annotated[str, Form(...)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> Response:
-    repos(request).user_post_defaults.set_for_owner(
-        session.user_id,
-        bot_alias=bot_alias,
-        channel_alias=channel_alias,
-    )
+    try:
+        repos(request).user_post_defaults.set_for_owner(
+            session.user_id,
+            bot_alias=bot_alias,
+            channel_alias=channel_alias,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=400, detail="Target aliases are invalid") from exc
     return RedirectResponse("/targets", status_code=303)
 
 
@@ -281,6 +287,8 @@ async def update_draft(
     ctx = _command_context(request, session)
     try:
         update_draft_message(ctx, draft_id, message)
+    except DraftMessageEmpty as exc:
+        raise HTTPException(status_code=400, detail="Draft message cannot be empty") from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Draft not found") from exc
     finally:

@@ -125,6 +125,23 @@ def test_composer_saves_draft(ctx, web_settings):
     assert drafts[0].message == "Web draft"
 
 
+def test_composer_rejects_empty_draft(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/").text)
+
+    response = client.post(
+        "/drafts",
+        data={"csrf": csrf, "message": "   \n"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Draft message cannot be empty" in response.text
+    assert ctx.post_drafts.list_for_owner("alice-id") == []
+
+
 def test_drafts_page_lists_saved_drafts(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -162,6 +179,30 @@ def test_draft_detail_updates_message(ctx, web_settings):
     assert response.status_code == 303
     assert response.headers["location"] == f"/drafts/{draft.id}"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).message == "Updated web draft"
+
+
+def test_draft_detail_rejects_empty_update(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Old web draft",
+        message_sha256="old",
+    )
+    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+
+    response = client.post(
+        f"/drafts/{draft.id}",
+        data={"csrf": csrf, "message": "  "},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Draft message cannot be empty" in response.text
+    stored = ctx.post_drafts.get_for_owner("alice-id", draft.id)
+    assert stored.message == "Old web draft"
+    assert stored.message_sha256 == "old"
 
 
 def test_draft_delete_marks_draft_deleted(ctx, web_settings):
@@ -298,4 +339,21 @@ def test_set_and_clear_default_from_targets(ctx, web_settings):
     )
 
     assert response.status_code == 303
+    assert ctx.user_post_defaults.get_for_owner("alice-id") is None
+
+
+def test_set_default_rejects_invalid_aliases(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/targets").text)
+
+    response = client.post(
+        "/targets/default",
+        data={"csrf": csrf, "bot_alias": "missing", "channel_alias": "missing"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Target aliases are invalid" in response.text
     assert ctx.user_post_defaults.get_for_owner("alice-id") is None
