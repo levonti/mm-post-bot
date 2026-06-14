@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "ignoreDeprecations": "6.0",
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts"]
+}
