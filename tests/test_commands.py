@@ -2208,3 +2208,55 @@ async def test_web_command_returns_one_time_login_link(ctx: CommandFixture):
         ctx.web_login_tokens.get_usable(hash_login_token(token), now=datetime.now(UTC))
         is not None
     )
+
+
+async def test_web_command_rejects_args_without_creating_login_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web extra")
+
+    assert reply == "Usage: !web"
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+async def test_web_command_requires_registered_user(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "register" in reply.lower()
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+async def test_web_command_requires_approved_user(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "approval" in reply.lower()
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+async def test_web_command_rejects_blocked_user(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+def _web_login_token_count(ctx: CommandFixture, owner_user_id: str) -> int:
+    row = ctx.conn.execute(
+        "SELECT count(*) AS token_count FROM web_login_token WHERE owner_user_id = %s",
+        (owner_user_id,),
+    ).fetchone()
+    return int(row["token_count"])

@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
-from itsdangerous import BadSignature
+import pytest
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from test_commands import ctx as _commands_ctx
 from test_commands import pg_conn as _commands_pg_conn
 
 from mm_post_bot.services.web_auth import (
+    SESSION_SALT,
     build_login_url,
     create_login_token,
     csrf_token_for_session,
@@ -84,9 +86,45 @@ def test_session_rejects_wrong_secret():
         raise AssertionError("session signed with another secret should fail")
 
 
+def test_session_rejects_signed_non_dict_payload():
+    secret = "s" * 32
+    serializer = URLSafeTimedSerializer(secret, salt=SESSION_SALT)
+    cookie = serializer.dumps(["not", "an", "object"])
+
+    with pytest.raises(BadSignature):
+        load_session(secret, cookie, max_age_seconds=60)
+
+
+@pytest.mark.parametrize("field", ["user_id", "username", "csrf_nonce"])
+@pytest.mark.parametrize("value", [None, ""])
+def test_session_rejects_missing_or_empty_required_payload_fields(
+    field: str,
+    value: str | None,
+):
+    secret = "s" * 32
+    serializer = URLSafeTimedSerializer(secret, salt=SESSION_SALT)
+    payload = {
+        "user_id": "alice-id",
+        "username": "alice",
+        "csrf_nonce": "nonce-1",
+    }
+    if value is None:
+        del payload[field]
+    else:
+        payload[field] = value
+    cookie = serializer.dumps(payload)
+
+    with pytest.raises(BadSignature):
+        load_session(secret, cookie, max_age_seconds=60)
+
+
 def test_csrf_token_is_bound_to_session_nonce():
     secret = "s" * 32
     token = csrf_token_for_session(secret, "nonce-1")
 
     assert verify_csrf_token(secret, "nonce-1", token) is True
     assert verify_csrf_token(secret, "nonce-2", token) is False
+
+
+def test_csrf_token_rejects_malformed_token():
+    assert verify_csrf_token("s" * 32, "nonce-1", "not-a-token") is False
