@@ -24,13 +24,33 @@
     </form>
     <aside class="side-panel" aria-label="{{ t('web.draft_detail.actions_aria') }}">
       <h2>{{ t("web.draft_detail.actions") }}</h2>
+      <section class="target-summary-block" aria-label="{{ t('web.targets.default_aria') }}">
+        <h3>{{ t("web.common.default_target") }}</h3>
+        {% if default %}
+          <p class="target-summary">{{ default.bot.alias }} -&gt; {{ default.channel.alias }}</p>
+        {% elif stale_default %}
+          <p class="target-summary warning">{{ t("web.common.target_stale") }}</p>
+        {% else %}
+          <p class="target-summary">{{ t("web.common.target_missing") }}</p>
+        {% endif %}
+      </section>
       <form class="publish-form" action="/drafts/{{ draft.id }}/publish" method="post">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label for="bot_alias">{{ t("web.draft_detail.bot_alias") }}</label>
-        <input id="bot_alias" name="bot_alias" type="text" placeholder="{{ t('web.draft_detail.use_default') }}">
+        <select id="bot_alias" name="bot_alias">
+          <option value="">{{ t("web.draft_detail.use_default") }}{% if default %} ({{ default.bot.alias }}){% endif %}</option>
+          {% for bot in bots %}
+            <option value="{{ bot.alias }}">{{ bot.alias }}</option>
+          {% endfor %}
+        </select>
         <label for="channel_alias">{{ t("web.draft_detail.channel_alias") }}</label>
-        <input id="channel_alias" name="channel_alias" type="text" placeholder="{{ t('web.draft_detail.use_default') }}">
-        <button type="submit">{{ t("web.draft_detail.publish") }}</button>
+        <select id="channel_alias" name="channel_alias">
+          <option value="">{{ t("web.draft_detail.use_default") }}{% if default %} ({{ default.channel.alias }}){% endif %}</option>
+          {% for channel in channels %}
+            <option value="{{ channel.alias }}">{{ channel.alias }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" {% if not default and (not bots or not channels) %}disabled{% endif %}>{{ t("web.draft_detail.publish") }}</button>
       </form>
       <form action="/drafts/{{ draft.id }}/delete" method="post">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">

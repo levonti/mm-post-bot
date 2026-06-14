@@ -31,10 +31,10 @@
         <tbody>
           {% for draft in drafts %}
             <tr>
-              <td>#{{ draft.id }}</td>
-              <td class="preview-cell">{{ draft.message.splitlines()[0] if draft.message.splitlines() else draft.message }}</td>
-              <td>{{ draft.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-              <td><a class="text-action" href="/drafts/{{ draft.id }}">{{ t("web.drafts.open") }}</a></td>
+              <td data-label="{{ t('web.drafts.table.id') }}">#{{ draft.id }}</td>
+              <td class="preview-cell" data-label="{{ t('web.drafts.table.preview') }}">{{ draft.message.splitlines()[0] if draft.message.splitlines() else draft.message }}</td>
+              <td data-label="{{ t('web.drafts.table.created') }}">{{ draft.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td data-label="{{ t('web.drafts.table.action') }}"><a class="text-action" href="/drafts/{{ draft.id }}">{{ t("web.drafts.open") }}</a></td>
             </tr>
           {% endfor %}
         </tbody>

@@ -17,24 +17,26 @@
           <a class="{% if active_page == 'audit' %}active{% endif %}" href="/audit">{{ t("web.nav.audit") }}</a>
         </nav>
         <div class="topbar-actions">
-          <form class="language-form" action="/language" method="post">
+          <form class="language-toggle" action="/language" method="post" aria-label="{{ t('web.language.label') }}">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
             <input type="hidden" name="next" value="{{ current_path }}">
-            <label class="sr-only" for="locale">{{ t("web.language.label") }}</label>
-            <select id="locale" name="locale" aria-label="{{ t('web.language.label') }}">
-              {% for option_locale in supported_locales %}
-                <option value="{{ option_locale }}" {% if option_locale == locale %}selected{% endif %}>
-                  {{ t("web.language." ~ option_locale) }}
-                </option>
-              {% endfor %}
-            </select>
-            <button type="submit">{{ t("web.language.apply") }}</button>
+            {% for option_locale in supported_locales %}
+              <button type="submit" name="locale" value="{{ option_locale }}" title="{{ t('web.language.' ~ option_locale) }}" {% if option_locale == locale %}class="active" disabled{% endif %}>
+                {{ option_locale|upper }}
+              </button>
+            {% endfor %}
           </form>
           <div class="user-chip">{{ session.username }}</div>
         </div>
       {% endif %}
     </header>
     <main class="shell">
+      {% if error_message %}
+        <section class="notice-banner notice-error" role="alert">{{ error_message }}</section>
+      {% endif %}
+      {% if success_message %}
+        <section class="notice-banner notice-success" role="status">{{ success_message }}</section>
+      {% endif %}
       {% if content %}
         <section class="notice">
           <h1>{{ title }}</h1>

@@ -28,20 +28,20 @@
         <tbody>
           {% for record in records %}
             <tr>
-              <td>{{ record.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-              <td>
+              <td data-label="{{ t('web.audit.table.created') }}">{{ record.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td data-label="{{ t('web.audit.table.status') }}">
                 <span class="status-pill status-{{ record.status }}">{{ record.status }}</span>
               </td>
-              <td>{% if record.draft_id is not none %}#{{ record.draft_id }}{% else %}-{% endif %}</td>
-              <td>{{ record.bot_username or record.bot_user_id or "-" }}</td>
-              <td>
+              <td data-label="{{ t('web.audit.table.draft') }}">{% if record.draft_id is not none %}#{{ record.draft_id }}{% else %}-{% endif %}</td>
+              <td data-label="{{ t('web.audit.table.bot') }}">{{ record.bot_username or record.bot_user_id or "-" }}</td>
+              <td data-label="{{ t('web.audit.table.channel') }}">
                 <span>{{ record.channel_link }}</span>
                 {% if record.resolved_channel_id %}
                   <span class="muted-block">{{ record.resolved_channel_id }}</span>
                 {% endif %}
               </td>
-              <td>{{ record.mattermost_post_id or "-" }}</td>
-              <td>
+              <td data-label="{{ t('web.audit.table.post') }}">{{ record.mattermost_post_id or "-" }}</td>
+              <td data-label="{{ t('web.audit.table.error') }}">
                 {% if record.error_code or record.error_message %}
                   <span>{{ record.error_code or "-" }}</span>
                   {% if record.error_message %}

@@ -79,6 +79,8 @@ def _base_context(
         "locale": locale,
         "supported_locales": WEB_LOCALES,
         "current_path": _request_path(request),
+        "error_message": None,
+        "success_message": None,
         "t": t,
     }
 
@@ -106,6 +108,80 @@ def _authenticated_context(
 def _web_error(request: Request, session: WebSession | None, key: str) -> str:
     locale = _session_locale(request, session) if session is not None else _default_locale(request)
     return translate(locale, f"web.error.{key}")
+
+
+def _target_context(request: Request, session: WebSession) -> dict[str, Any]:
+    repo_set = repos(request)
+    default = repo_set.user_post_defaults.get_for_owner(session.user_id)
+    return {
+        "bots": repo_set.user_bots.list_for_owner(session.user_id),
+        "channels": repo_set.user_channels.list_for_owner(session.user_id),
+        "default": default,
+        "stale_default": default is None
+        and repo_set.user_post_defaults.has_for_owner(session.user_id),
+    }
+
+
+def _composer_context(
+    request: Request,
+    *,
+    session: WebSession,
+    csrf: str,
+    draft_message: str = "",
+    error_message: str | None = None,
+) -> dict[str, Any]:
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="composer",
+        title_key="web.page.composer",
+    )
+    context.update(_target_context(request, session))
+    context["draft_message"] = draft_message
+    context["error_message"] = error_message
+    return context
+
+
+def _draft_detail_context(
+    request: Request,
+    *,
+    session: WebSession,
+    csrf: str,
+    draft: PostDraft,
+    error_message: str | None = None,
+) -> dict[str, Any]:
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="drafts",
+        title_key="web.page.draft_detail",
+        title_params={"draft_id": draft.id},
+    )
+    context.update(_target_context(request, session))
+    context["draft"] = draft
+    context["error_message"] = error_message
+    return context
+
+
+def _targets_context(
+    request: Request,
+    *,
+    session: WebSession,
+    csrf: str,
+    error_message: str | None = None,
+) -> dict[str, Any]:
+    context = _authenticated_context(
+        request,
+        session=session,
+        csrf=csrf,
+        active_page="targets",
+        title_key="web.page.targets",
+    )
+    context.update(_target_context(request, session))
+    context["error_message"] = error_message
+    return context
 
 
 def _command_context(request: Request, session: WebSession) -> CommandContext:
@@ -240,14 +316,11 @@ def home(
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
 ) -> Response:
-    context = _authenticated_context(
+    context = _composer_context(
         request,
         session=session,
         csrf=csrf,
-        active_page="composer",
-        title_key="web.page.composer",
     )
-    context["draft_message"] = ""
     return templates.TemplateResponse(
         request=request,
         name="composer.html",
@@ -265,11 +338,20 @@ async def save_draft(
     ctx = _command_context(request, session)
     try:
         create_draft(ctx, message)
-    except DraftMessageEmpty as exc:
-        raise HTTPException(
+    except DraftMessageEmpty:
+        context = _composer_context(
+            request,
+            session=session,
+            csrf=csrf_token(request),
+            draft_message=message,
+            error_message=_web_error(request, session, "draft_empty"),
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="composer.html",
+            context=context,
             status_code=400,
-            detail=_web_error(request, session, "draft_empty"),
-        ) from exc
+        )
     finally:
         await ctx.manager_mm.aclose()
     return RedirectResponse("/drafts", status_code=303)
@@ -302,6 +384,7 @@ def audit(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
+    published: Annotated[int | None, Query()] = None,
 ) -> Response:
     records = repos(request).audits.list_for_user(session.user_id, limit=50)
     context = _authenticated_context(
@@ -312,6 +395,11 @@ def audit(
         title_key="web.page.audit",
     )
     context["records"] = records
+    if published is not None:
+        context["success_message"] = context["t"](
+            "web.audit.published_banner",
+            draft_id=published,
+        )
     return templates.TemplateResponse(
         request=request,
         name="audit.html",
@@ -325,23 +413,10 @@ def targets(
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
 ) -> Response:
-    repo_set = repos(request)
-    default = repo_set.user_post_defaults.get_for_owner(session.user_id)
-    stale_default = default is None and repo_set.user_post_defaults.has_for_owner(session.user_id)
-    context = _authenticated_context(
+    context = _targets_context(
         request,
         session=session,
         csrf=csrf,
-        active_page="targets",
-        title_key="web.page.targets",
-    )
-    context.update(
-        {
-            "bots": repo_set.user_bots.list_for_owner(session.user_id),
-            "channels": repo_set.user_channels.list_for_owner(session.user_id),
-            "default": default,
-            "stale_default": stale_default,
-        }
     )
     return templates.TemplateResponse(
         request=request,
@@ -364,11 +439,19 @@ def set_default_target(
             bot_alias=bot_alias,
             channel_alias=channel_alias,
         )
-    except LookupError as exc:
-        raise HTTPException(
+    except LookupError:
+        context = _targets_context(
+            request,
+            session=session,
+            csrf=csrf_token(request),
+            error_message=_web_error(request, session, "target_aliases_invalid"),
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="targets.html",
+            context=context,
             status_code=400,
-            detail=_web_error(request, session, "target_aliases_invalid"),
-        ) from exc
+        )
     return RedirectResponse("/targets", status_code=303)
 
 
@@ -390,15 +473,12 @@ def draft_detail(
     draft_id: int,
 ) -> Response:
     draft = _draft_or_404(request, session, draft_id)
-    context = _authenticated_context(
+    context = _draft_detail_context(
         request,
         session=session,
         csrf=csrf,
-        active_page="drafts",
-        title_key="web.page.draft_detail",
-        title_params={"draft_id": draft.id},
+        draft=draft,
     )
-    context["draft"] = draft
     return templates.TemplateResponse(
         request=request,
         name="draft_detail.html",
@@ -414,14 +494,24 @@ async def update_draft(
     message: Annotated[str, Form(...)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> Response:
+    draft = _draft_or_404(request, session, draft_id)
     ctx = _command_context(request, session)
     try:
         update_draft_message(ctx, draft_id, message)
-    except DraftMessageEmpty as exc:
-        raise HTTPException(
+    except DraftMessageEmpty:
+        context = _draft_detail_context(
+            request,
+            session=session,
+            csrf=csrf_token(request),
+            draft=draft,
+            error_message=_web_error(request, session, "draft_empty"),
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="draft_detail.html",
+            context=context,
             status_code=400,
-            detail=_web_error(request, session, "draft_empty"),
-        ) from exc
+        )
     except LookupError as exc:
         raise HTTPException(
             status_code=404,
@@ -441,6 +531,7 @@ async def publish_draft_from_web(
     bot_alias: Annotated[str, Form()] = "",
     channel_alias: Annotated[str, Form()] = "",
 ) -> Response:
+    draft = _draft_or_404(request, session, draft_id)
     ctx = _command_context(request, session)
     try:
         await publish_draft(
@@ -454,10 +545,22 @@ async def publish_draft_from_web(
             ),
         )
     except PublishError as exc:
-        raise HTTPException(status_code=400, detail=_web_error(request, session, exc.code)) from exc
+        context = _draft_detail_context(
+            request,
+            session=session,
+            csrf=csrf_token(request),
+            draft=draft,
+            error_message=_web_error(request, session, exc.code),
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="draft_detail.html",
+            context=context,
+            status_code=400,
+        )
     finally:
         await ctx.manager_mm.aclose()
-    return RedirectResponse("/audit", status_code=303)
+    return RedirectResponse(f"/audit?published={draft_id}", status_code=303)
 
 
 @router.post("/drafts/{draft_id}/delete")

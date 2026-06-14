@@ -23,17 +23,24 @@
       </div>
     </form>
     <aside class="side-panel" aria-label="{{ t('web.composer.defaults_aria') }}">
-      <h2>{{ t("web.common.targets") }}</h2>
-      <dl>
-        <div>
-          <dt>{{ t("web.common.bot") }}</dt>
-          <dd>{{ t("web.common.not_selected") }}</dd>
-        </div>
-        <div>
-          <dt>{{ t("web.common.channel") }}</dt>
-          <dd>{{ t("web.common.not_selected") }}</dd>
-        </div>
-      </dl>
+      <h2>{{ t("web.common.default_target") }}</h2>
+      {% if default %}
+        <p class="target-summary">{{ t("web.common.ready_to_publish") }}</p>
+        <dl>
+          <div>
+            <dt>{{ t("web.common.bot") }}</dt>
+            <dd>{{ default.bot.alias }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("web.common.channel") }}</dt>
+            <dd>{{ default.channel.alias }}</dd>
+          </div>
+        </dl>
+      {% elif stale_default %}
+        <p class="target-summary warning">{{ t("web.common.target_stale") }}</p>
+      {% else %}
+        <p class="target-summary">{{ t("web.common.target_missing") }}</p>
+      {% endif %}
     </aside>
   </section>
 {% endblock %}

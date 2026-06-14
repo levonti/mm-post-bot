@@ -7,6 +7,7 @@ from test_commands import ctx as _commands_ctx
 from test_commands import pg_conn as _commands_pg_conn
 
 from mm_post_bot.config import Settings
+from mm_post_bot.mm_client import MattermostError
 from mm_post_bot.security import encrypt_token, hash_message
 from mm_post_bot.services.web_auth import create_login_token, hash_login_token
 from mm_post_bot.web.app import create_app
@@ -192,7 +193,11 @@ def test_language_switcher_updates_shared_preference(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/").text)
+    home = client.get("/")
+    csrf = _csrf_from(home.text)
+
+    assert 'class="language-toggle"' in home.text
+    assert "Apply" not in home.text
 
     response = client.post(
         "/language",
@@ -241,6 +246,21 @@ def test_language_switcher_sanitizes_unsafe_next(ctx, web_settings):
     assert ctx.user_preferences.get_locale("alice-id") == "ru"
 
 
+def test_composer_shows_ready_default_target(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    _ready_target(ctx)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Default target" in response.text
+    assert "Ready to publish" in response.text
+    assert "news" in response.text
+    assert "town" in response.text
+
+
 def test_composer_saves_draft(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -272,7 +292,10 @@ def test_composer_rejects_empty_draft(ctx, web_settings):
     )
 
     assert response.status_code == 400
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'role="alert"' in response.text
     assert "Draft message cannot be empty" in response.text
+    assert "<textarea" in response.text
     assert ctx.post_drafts.list_for_owner("alice-id") == []
 
 
@@ -290,6 +313,8 @@ def test_drafts_page_lists_saved_drafts(ctx, web_settings):
 
     assert response.status_code == 200
     assert "Queued web post" in response.text
+    assert 'data-label="Preview"' in response.text
+    assert 'data-label="Created"' in response.text
     assert "Open" in response.text
 
 
@@ -315,6 +340,30 @@ def test_draft_detail_updates_message(ctx, web_settings):
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).message == "Updated web draft"
 
 
+def test_draft_detail_uses_target_selects(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    _ready_target(ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Selectable target draft",
+        message_sha256="hash",
+    )
+
+    response = client.get(f"/drafts/{draft.id}")
+
+    assert response.status_code == 200
+    assert "Default target" in response.text
+    assert "news -&gt; town" in response.text
+    assert '<select id="bot_alias" name="bot_alias">' in response.text
+    assert '<select id="channel_alias" name="channel_alias">' in response.text
+    assert '<option value="">Use default' in response.text
+    assert '<option value="news">news</option>' in response.text
+    assert '<option value="town">town</option>' in response.text
+    assert 'type="text" placeholder="Use default"' not in response.text
+
+
 def test_draft_detail_rejects_empty_update(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -333,7 +382,10 @@ def test_draft_detail_rejects_empty_update(ctx, web_settings):
     )
 
     assert response.status_code == 400
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'role="alert"' in response.text
     assert "Draft message cannot be empty" in response.text
+    assert "Old web draft" in response.text
     stored = ctx.post_drafts.get_for_owner("alice-id", draft.id)
     assert stored.message == "Old web draft"
     assert stored.message_sha256 == "old"
@@ -380,9 +432,62 @@ def test_publish_draft_from_web(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/audit"
+    assert response.headers["location"] == f"/audit?published={draft.id}"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "sent"
     assert ctx.created_posts[0]["message"] == "Publish from web"
+
+
+def test_publish_success_shows_audit_banner(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    _ready_target(ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Publish with banner",
+        message_sha256=hash_message("Publish with banner"),
+    )
+    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+
+    response = client.post(
+        f"/drafts/{draft.id}/publish",
+        data={"csrf": csrf, "bot_alias": "", "channel_alias": ""},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/audit?published={draft.id}"
+    audit = client.get(response.headers["location"])
+    assert audit.status_code == 200
+    assert f"Draft #{draft.id} published." in audit.text
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "sent"
+
+
+def test_publish_error_renders_inline_banner(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    _ready_target(ctx)
+    ctx.token_post_results[("secret-token", "channel-id")] = MattermostError(403, "denied")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Publish failure stays editable",
+        message_sha256=hash_message("Publish failure stays editable"),
+    )
+    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+
+    response = client.post(
+        f"/drafts/{draft.id}/publish",
+        data={"csrf": csrf, "bot_alias": "", "channel_alias": ""},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'role="alert"' in response.text
+    assert "Could not publish the post." in response.text
+    assert "Publish failure stays editable" in response.text
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
 
 
 def test_audit_page_lists_records(ctx, web_settings):
@@ -489,5 +594,7 @@ def test_set_default_rejects_invalid_aliases(ctx, web_settings):
     )
 
     assert response.status_code == 400
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'role="alert"' in response.text
     assert "Target aliases are invalid" in response.text
     assert ctx.user_post_defaults.get_for_owner("alice-id") is None
