@@ -228,6 +228,7 @@ def test_context_factory_uses_default_locale_without_preference(pg_conn: DbConn)
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
         token_encryption_key=FERNET_KEY,
+        web_session_secret="s" * 32,
         default_locale="ru",
     )
     factory = CommandContextFactory(
@@ -253,6 +254,7 @@ def test_context_factory_uses_stored_user_locale(pg_conn: DbConn):
             mm_admins="levonti",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
             token_encryption_key=FERNET_KEY,
+            web_session_secret="s" * 32,
             default_locale="en",
         )
         factory = CommandContextFactory(

@@ -458,6 +458,53 @@ def test_audit_success_row(repos):
     assert rows[0].mattermost_post_id == "post-id"
 
 
+def test_audit_list_for_user_respects_explicit_limit(repos):
+    users, bots, _, _, _, drafts, audits = repos
+    users.upsert_seen_user(user_id="u-audit-limit", username="auditor", is_admin=False)
+    users.approve("u-audit-limit", approved_by="admin-id")
+    bot = bots.add(
+        owner_user_id="u-audit-limit",
+        alias="news",
+        bot_user_id="bot-limit",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext="cipher",
+        token_fingerprint="fp",
+    )
+    first = drafts.create(owner_user_id="u-audit-limit", message="one", message_sha256="hash-1")
+    second = drafts.create(owner_user_id="u-audit-limit", message="two", message_sha256="hash-2")
+    for draft in (first, second):
+        audits.record(
+            caller_user_id="u-audit-limit",
+            caller_username="auditor",
+            draft_id=draft.id,
+            user_bot_id=bot.id,
+            bot_user_id="bot-limit",
+            bot_username="news-bot",
+            channel_link="https://mm.internal/team/channels/town-square",
+            resolved_channel_id="channel-id",
+            resolved_team_name="team",
+            resolved_channel_name="town-square",
+            message_sha256=draft.message_sha256,
+            status="success",
+            mattermost_post_id=f"post-{draft.id}",
+            error_code=None,
+            error_message=None,
+        )
+
+    rows = audits.list_for_user("u-audit-limit", limit=1)
+
+    assert len(rows) == 1
+
+
+@pytest.mark.parametrize("limit", [0, 101])
+def test_audit_list_for_user_rejects_invalid_limit(repos, limit):
+    *_, audits = repos
+
+    with pytest.raises(ValueError, match="audit limit must be between 1 and 100"):
+        audits.list_for_user("u1", limit=limit)
+
+
 def test_web_login_token_lifecycle(repos):
     users, *_ = repos
     _approved_user(users, "u-web", "webuser")
@@ -494,6 +541,26 @@ def test_web_login_token_expired_is_not_usable(repos):
     assert token_repo.get_usable("hash-expired", now=now) is None
 
 
+def test_web_login_token_consume_is_one_time(repos):
+    users, *_ = repos
+    _approved_user(users, "u-consume", "consume")
+    token_repo = WebLoginTokenRepo(users._conn)
+    now = datetime.now(UTC)
+    created = token_repo.create(
+        owner_user_id="u-consume",
+        token_sha256="hash-consume",
+        expires_at=now + timedelta(minutes=5),
+    )
+
+    consumed = token_repo.consume("hash-consume", now=now)
+    second = token_repo.consume("hash-consume", now=now)
+
+    assert consumed is not None
+    assert consumed.id == created.id
+    assert consumed.used_at is not None
+    assert second is None
+
+
 def test_post_draft_update_message_updates_hash_and_timestamp(repos):
     users, _, _, _, _, drafts, _ = repos
     _approved_user(users, "u-draft", "drafty")
@@ -514,3 +581,56 @@ def test_post_draft_update_message_updates_hash_and_timestamp(repos):
     assert updated.message_sha256 == "new-hash"
     assert updated.status == "draft"
     assert updated.updated_at >= draft.updated_at
+
+
+def test_post_draft_update_message_rejects_sent_draft(repos):
+    users, bots, _, _, _, drafts, _ = repos
+    _approved_user(users, "u-sent-edit", "sentedit")
+    bot = _bot(bots, "u-sent-edit")
+    draft = drafts.create(
+        owner_user_id="u-sent-edit",
+        message="Original body",
+        message_sha256="original-hash",
+    )
+    drafts.mark_sent(
+        "u-sent-edit",
+        draft.id,
+        sent_by_user_bot_id=bot.id,
+        sent_channel_id="channel-id",
+        mattermost_post_id="post-id",
+    )
+
+    with pytest.raises(LookupError, match="editable post_draft not found"):
+        drafts.update_message(
+            "u-sent-edit",
+            draft.id,
+            message="Changed body",
+            message_sha256="changed-hash",
+        )
+
+    stored = drafts.get_for_owner("u-sent-edit", draft.id)
+    assert stored.message == "Original body"
+    assert stored.message_sha256 == "original-hash"
+
+
+def test_post_draft_update_message_rejects_deleted_draft(repos):
+    users, _, _, _, _, drafts, _ = repos
+    _approved_user(users, "u-deleted-edit", "deletededit")
+    draft = drafts.create(
+        owner_user_id="u-deleted-edit",
+        message="Original body",
+        message_sha256="original-hash",
+    )
+    drafts.soft_delete("u-deleted-edit", draft.id)
+
+    with pytest.raises(LookupError, match="editable post_draft not found"):
+        drafts.update_message(
+            "u-deleted-edit",
+            draft.id,
+            message="Changed body",
+            message_sha256="changed-hash",
+        )
+
+    stored = drafts.get_for_owner("u-deleted-edit", draft.id)
+    assert stored.message == "Original body"
+    assert stored.message_sha256 == "original-hash"

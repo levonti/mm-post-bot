@@ -15,6 +15,7 @@ from mm_post_bot.dispatcher import (
 from mm_post_bot.security import hash_message
 
 VALID_FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+VALID_WEB_SESSION_SECRET = "s" * 32
 
 
 class _UnusedContextFactory:
@@ -146,6 +147,7 @@ def test_context_factory_normalizes_sender_name_username():
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
         token_encryption_key=VALID_FERNET_KEY,
+        web_session_secret=VALID_WEB_SESSION_SECRET,
     )
     factory = CommandContextFactory(
         conn=cast(Any, _PreferenceConn()),

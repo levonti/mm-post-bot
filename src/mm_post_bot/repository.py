@@ -300,6 +300,22 @@ class WebLoginTokenRepo:
             return None
         return _web_login_token_from_row(row)
 
+    def consume(self, token_sha256: str, *, now: datetime) -> WebLoginToken | None:
+        row = self._conn.execute(
+            """
+            UPDATE web_login_token
+            SET used_at = %s
+            WHERE token_sha256 = %s
+              AND used_at IS NULL
+              AND expires_at > %s
+            RETURNING *
+            """,
+            (_now(), token_sha256, now),
+        ).fetchone()
+        if row is None:
+            return None
+        return _web_login_token_from_row(row)
+
     def mark_used(self, token_id: int) -> None:
         self._conn.execute(
             """
@@ -995,6 +1011,8 @@ class AuditRepo:
         return _post_audit_from_row(row)
 
     def list_for_user(self, caller_user_id: str, *, limit: int = 50) -> list[PostAuditRecord]:
+        if not 1 <= limit <= 100:
+            raise ValueError("audit limit must be between 1 and 100")
         rows = self._conn.execute(
             """
             SELECT *
