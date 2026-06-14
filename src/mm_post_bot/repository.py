@@ -109,6 +109,16 @@ class PostAuditRecord:
     created_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class WebLoginToken:
+    id: int
+    owner_user_id: str
+    token_sha256: str
+    created_at: datetime
+    expires_at: datetime
+    used_at: datetime | None
+
+
 def _user_from_row(row: Any) -> AppUser:
     return AppUser(
         user_id=row["user_id"],
@@ -241,6 +251,65 @@ def _post_audit_from_row(row: Any) -> PostAuditRecord:
         error_message=row["error_message"],
         created_at=row["created_at"],
     )
+
+
+def _web_login_token_from_row(row: Any) -> WebLoginToken:
+    return WebLoginToken(
+        id=row["id"],
+        owner_user_id=row["owner_user_id"],
+        token_sha256=row["token_sha256"],
+        created_at=row["created_at"],
+        expires_at=row["expires_at"],
+        used_at=row["used_at"],
+    )
+
+
+class WebLoginTokenRepo:
+    def __init__(self, conn: DbConn) -> None:
+        self._conn = conn
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        token_sha256: str,
+        expires_at: datetime,
+    ) -> WebLoginToken:
+        row = self._conn.execute(
+            """
+            INSERT INTO web_login_token (owner_user_id, token_sha256, expires_at)
+            VALUES (%s, %s, %s)
+            RETURNING *
+            """,
+            (owner_user_id, token_sha256, expires_at),
+        ).fetchone()
+        return _web_login_token_from_row(row)
+
+    def get_usable(self, token_sha256: str, *, now: datetime) -> WebLoginToken | None:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM web_login_token
+            WHERE token_sha256 = %s
+              AND used_at IS NULL
+              AND expires_at > %s
+            """,
+            (token_sha256, now),
+        ).fetchone()
+        if row is None:
+            return None
+        return _web_login_token_from_row(row)
+
+    def mark_used(self, token_id: int) -> None:
+        self._conn.execute(
+            """
+            UPDATE web_login_token
+            SET used_at = %s
+            WHERE id = %s
+              AND used_at IS NULL
+            """,
+            (_now(), token_id),
+        )
 
 
 class UserRepo:
@@ -768,6 +837,32 @@ class PostDraftRepo:
             raise LookupError(f"post_draft not found: {owner_user_id}/{draft_id}")
         return _post_draft_from_row(row)
 
+    def update_message(
+        self,
+        owner_user_id: str,
+        draft_id: int,
+        *,
+        message: str,
+        message_sha256: str,
+    ) -> PostDraft:
+        now = _now()
+        row = self._conn.execute(
+            """
+            UPDATE post_draft
+            SET message = %s,
+                message_sha256 = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND id = %s
+              AND status = 'draft'
+            RETURNING *
+            """,
+            (message, message_sha256, now, owner_user_id, draft_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"editable post_draft not found: {owner_user_id}/{draft_id}")
+        return _post_draft_from_row(row)
+
     def list_for_owner(self, owner_user_id: str) -> list[PostDraft]:
         rows = self._conn.execute(
             """
@@ -899,14 +994,15 @@ class AuditRepo:
         ).fetchone()
         return _post_audit_from_row(row)
 
-    def list_for_user(self, caller_user_id: str) -> list[PostAuditRecord]:
+    def list_for_user(self, caller_user_id: str, *, limit: int = 50) -> list[PostAuditRecord]:
         rows = self._conn.execute(
             """
             SELECT *
             FROM post_audit_log
             WHERE caller_user_id = %s
             ORDER BY created_at DESC, id DESC
+            LIMIT %s
             """,
-            (caller_user_id,),
+            (caller_user_id, limit),
         ).fetchall()
         return [_post_audit_from_row(row) for row in rows]

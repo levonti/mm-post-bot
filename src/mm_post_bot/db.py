@@ -110,6 +110,20 @@ CREATE TABLE IF NOT EXISTS post_audit_log (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_post_audit_user ON post_audit_log(caller_user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS web_login_token (
+    id             BIGSERIAL PRIMARY KEY,
+    owner_user_id  TEXT NOT NULL REFERENCES app_user(user_id),
+    token_sha256   TEXT NOT NULL UNIQUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ NOT NULL,
+    used_at        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_web_login_token_owner
+    ON web_login_token(owner_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_web_login_token_usable
+    ON web_login_token(token_sha256, expires_at)
+    WHERE used_at IS NULL;
 """
 
 

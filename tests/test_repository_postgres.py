@@ -14,6 +14,7 @@ from mm_post_bot.repository import (
     UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
+    WebLoginTokenRepo,
 )
 
 POSTGRES_IMAGE = "postgres:15-alpine"
@@ -455,3 +456,61 @@ def test_audit_success_row(repos):
     rows = audits.list_for_user("u1")
     assert rows[0].status == "success"
     assert rows[0].mattermost_post_id == "post-id"
+
+
+def test_web_login_token_lifecycle(repos):
+    users, *_ = repos
+    _approved_user(users, "u-web", "webuser")
+    token_repo = WebLoginTokenRepo(users._conn)
+    now = datetime.now(UTC)
+
+    created = token_repo.create(
+        owner_user_id="u-web",
+        token_sha256="hash-a",
+        expires_at=now + timedelta(minutes=5),
+    )
+
+    assert created.owner_user_id == "u-web"
+    assert created.token_sha256 == "hash-a"
+    assert created.used_at is None
+    assert token_repo.get_usable("hash-a", now=now).id == created.id
+
+    token_repo.mark_used(created.id)
+
+    assert token_repo.get_usable("hash-a", now=now) is None
+
+
+def test_web_login_token_expired_is_not_usable(repos):
+    users, *_ = repos
+    _approved_user(users, "u-expired", "expired")
+    token_repo = WebLoginTokenRepo(users._conn)
+    now = datetime.now(UTC)
+    token_repo.create(
+        owner_user_id="u-expired",
+        token_sha256="hash-expired",
+        expires_at=now - timedelta(seconds=1),
+    )
+
+    assert token_repo.get_usable("hash-expired", now=now) is None
+
+
+def test_post_draft_update_message_updates_hash_and_timestamp(repos):
+    users, _, _, _, _, drafts, _ = repos
+    _approved_user(users, "u-draft", "drafty")
+    draft = drafts.create(
+        owner_user_id="u-draft",
+        message="Old body",
+        message_sha256="old-hash",
+    )
+
+    updated = drafts.update_message(
+        "u-draft",
+        draft.id,
+        message="New body",
+        message_sha256="new-hash",
+    )
+
+    assert updated.message == "New body"
+    assert updated.message_sha256 == "new-hash"
+    assert updated.status == "draft"
+    assert updated.updated_at >= draft.updated_at
