@@ -12,11 +12,40 @@ services:
       MM_VERIFY_SSL: ${MM_VERIFY_SSL:-true}
       DB_URL: postgresql://${POSTGRES_USER:-mm_post}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-mm_post_bot}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
-      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:?WEB_SESSION_SECRET is required}
       WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:8080}
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:?WEB_SESSION_SECRET is required}
+      WEB_COOKIE_SECURE: ${WEB_COOKIE_SECURE:-false}
       WEB_LOGIN_TOKEN_TTL_SECONDS: ${WEB_LOGIN_TOKEN_TTL_SECONDS:-300}
+      WEB_SESSION_MAX_AGE_SECONDS: ${WEB_SESSION_MAX_AGE_SECONDS:-604800}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MAX_EVENT_TASKS: ${MAX_EVENT_TASKS:-32}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+
+  mm-post-bot-web:
+    build: .
+    command: ["mm-post-bot-web"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
+    environment:
+      MM_URL: ${MM_URL}
+      MM_BOT_TOKEN: ${MM_BOT_TOKEN}
+      MM_ADMINS: ${MM_ADMINS}
+      MM_VERIFY_SSL: ${MM_VERIFY_SSL:-true}
+      DB_URL: postgresql://${POSTGRES_USER:-mm_post}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-mm_post_bot}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:8080}
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:?WEB_SESSION_SECRET is required}
+      WEB_COOKIE_SECURE: ${WEB_COOKIE_SECURE:-false}
+      WEB_HOST: ${WEB_HOST:-0.0.0.0}
+      WEB_PORT: ${WEB_PORT:-8080}
+      WEB_LOGIN_TOKEN_TTL_SECONDS: ${WEB_LOGIN_TOKEN_TTL_SECONDS:-300}
+      WEB_SESSION_MAX_AGE_SECONDS: ${WEB_SESSION_MAX_AGE_SECONDS:-604800}
 
   postgres:
     image: postgres:15-alpine
