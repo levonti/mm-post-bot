@@ -1,17 +1,72 @@
 from datetime import UTC, datetime
 from pathlib import Path
 from secrets import token_urlsafe
-from typing import Annotated
+from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from ..commands.context import CommandContext
+from ..db import DbConn
+from ..i18n import FALLBACK_LOCALE, normalize_locale
+from ..mm_client import MattermostClient
+from ..repository import DraftCaptureRepo, PostDraft, UserPreferenceRepo
+from ..services.posting import create_draft, update_draft_message
 from ..services.web_auth import WebSession, hash_login_token, sign_session
-from .deps import SESSION_COOKIE, csrf_token, current_session, repos, settings
+from .deps import SESSION_COOKIE, csrf_token, current_session, repos, require_csrf, settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+
+def _command_context(request: Request, session: WebSession) -> CommandContext:
+    cfg = settings(request)
+    repo_set = repos(request)
+    conn = cast(DbConn, request.app.state.conn)
+    user_preference_repo = UserPreferenceRepo(conn)
+    default_locale = normalize_locale(cfg.default_locale) or FALLBACK_LOCALE
+    locale = user_preference_repo.get_locale(session.user_id) or default_locale
+    return CommandContext(
+        caller_user_id=session.user_id,
+        caller_username=session.username,
+        channel_id="",
+        channel_type=None,
+        user_repo=repo_set.users,
+        user_preference_repo=user_preference_repo,
+        user_bot_repo=repo_set.user_bots,
+        user_channel_repo=repo_set.user_channels,
+        user_post_default_repo=repo_set.user_post_defaults,
+        draft_capture_repo=DraftCaptureRepo(conn),
+        post_draft_repo=repo_set.post_drafts,
+        web_login_token_repo=repo_set.web_login_tokens,
+        audit_repo=repo_set.audits,
+        manager_mm=MattermostClient(
+            cfg.mm_rest_base,
+            cfg.mm_bot_token,
+            verify_ssl=cfg.mm_verify_ssl,
+        ),
+        manager_user_id="",
+        admin_usernames=frozenset(cfg.admin_usernames),
+        mm_rest_base=cfg.mm_rest_base,
+        mm_url=str(cfg.mm_url).rstrip("/"),
+        token_encryption_key=cfg.token_encryption_key,
+        mm_verify_ssl=cfg.mm_verify_ssl,
+        web_base_url=str(cfg.web_base_url).rstrip("/"),
+        web_login_token_ttl_seconds=cfg.web_login_token_ttl_seconds,
+        default_locale=default_locale,
+        locale=locale,
+    )
+
+
+def _draft_or_404(request: Request, session: WebSession, draft_id: int) -> PostDraft:
+    try:
+        draft = repos(request).post_drafts.get_for_owner(session.user_id, draft_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Draft not found") from exc
+    if draft.status != "draft":
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return draft
 
 
 @router.get("/login-required")
@@ -78,3 +133,87 @@ def home(
             "draft_message": "",
         },
     )
+
+
+@router.post("/drafts")
+async def save_draft(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    message: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> Response:
+    ctx = _command_context(request, session)
+    try:
+        create_draft(ctx, message)
+    finally:
+        await ctx.manager_mm.aclose()
+    return RedirectResponse("/drafts", status_code=303)
+
+
+@router.get("/drafts")
+def draft_list(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+) -> Response:
+    drafts = repos(request).post_drafts.list_for_owner(session.user_id)
+    return templates.TemplateResponse(
+        request=request,
+        name="drafts.html",
+        context={
+            "title": "Drafts",
+            "session": session,
+            "active_page": "drafts",
+            "drafts": drafts,
+        },
+    )
+
+
+@router.get("/drafts/{draft_id}")
+def draft_detail(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    csrf: Annotated[str, Depends(csrf_token)],
+    draft_id: int,
+) -> Response:
+    draft = _draft_or_404(request, session, draft_id)
+    return templates.TemplateResponse(
+        request=request,
+        name="draft_detail.html",
+        context={
+            "title": f"Draft {draft.id}",
+            "session": session,
+            "active_page": "drafts",
+            "csrf_token": csrf,
+            "draft": draft,
+        },
+    )
+
+
+@router.post("/drafts/{draft_id}")
+async def update_draft(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    message: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> Response:
+    ctx = _command_context(request, session)
+    try:
+        update_draft_message(ctx, draft_id, message)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Draft not found") from exc
+    finally:
+        await ctx.manager_mm.aclose()
+    return RedirectResponse(f"/drafts/{draft_id}", status_code=303)
+
+
+@router.post("/drafts/{draft_id}/delete")
+def delete_draft(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> Response:
+    _draft_or_404(request, session, draft_id)
+    repos(request).post_drafts.soft_delete(session.user_id, draft_id)
+    return RedirectResponse("/drafts", status_code=303)

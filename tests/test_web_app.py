@@ -42,6 +42,13 @@ def _login(client: TestClient, ctx) -> None:
     assert ctx.web_login_tokens.get_usable(hash_login_token(raw), now=datetime.now(UTC)) is None
 
 
+def _csrf_from(response_text: str) -> str:
+    marker = 'name="csrf" value="'
+    start = response_text.index(marker) + len(marker)
+    end = response_text.index('"', start)
+    return response_text[start:end]
+
+
 def test_login_requires_valid_token(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -83,3 +90,82 @@ def test_home_renders_workspace_after_login(ctx, web_settings):
     assert "Drafts" in response.text
     assert "Targets" in response.text
     assert "Audit" in response.text
+
+
+def test_composer_saves_draft(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/").text)
+
+    response = client.post(
+        "/drafts",
+        data={"csrf": csrf, "message": "Web draft"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/drafts"
+    drafts = ctx.post_drafts.list_for_owner("alice-id")
+    assert drafts[0].message == "Web draft"
+
+
+def test_drafts_page_lists_saved_drafts(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Queued web post",
+        message_sha256="hash",
+    )
+
+    response = client.get("/drafts")
+
+    assert response.status_code == 200
+    assert "Queued web post" in response.text
+    assert "Open" in response.text
+
+
+def test_draft_detail_updates_message(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Old web draft",
+        message_sha256="old",
+    )
+    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+
+    response = client.post(
+        f"/drafts/{draft.id}",
+        data={"csrf": csrf, "message": "Updated web draft"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/drafts/{draft.id}"
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).message == "Updated web draft"
+
+
+def test_draft_delete_marks_draft_deleted(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Delete web draft",
+        message_sha256="hash",
+    )
+    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+
+    response = client.post(
+        f"/drafts/{draft.id}/delete",
+        data={"csrf": csrf},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/drafts"
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "deleted"

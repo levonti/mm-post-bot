@@ -12,7 +12,7 @@
       {% if session %}
         <nav class="primary-nav" aria-label="Primary">
           <a class="{% if active_page == 'composer' %}active{% endif %}" href="/">Composer</a>
-          <a href="/drafts">Drafts</a>
+          <a class="{% if active_page == 'drafts' %}active{% endif %}" href="/drafts">Drafts</a>
           <a href="/targets">Targets</a>
           <a href="/audit">Audit</a>
         </nav>
