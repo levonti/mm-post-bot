@@ -210,11 +210,19 @@ a {
   font-weight: 600;
 }
 
-.workspace-meta span {
+.workspace-meta span,
+.workspace-meta .meta-link {
   padding: 5px 9px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.workspace-meta .meta-link:hover,
+.workspace-meta .meta-link:focus-visible {
+  border-color: rgb(31 111 99 / 45%);
+  background: #e5f4ee;
+  color: var(--accent-strong);
 }
 
 .composer-layout {

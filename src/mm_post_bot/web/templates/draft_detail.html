@@ -38,14 +38,14 @@
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label for="bot_alias">{{ t("web.draft_detail.bot_alias") }}</label>
         <select id="bot_alias" name="bot_alias">
-          <option value="">{{ t("web.draft_detail.use_default") }}{% if default %} ({{ default.bot.alias }}){% endif %}</option>
+          <option value="">{% if default %}{{ t("web.draft_detail.use_default_value", value=default.bot.alias) }}{% else %}{{ t("web.draft_detail.use_default") }}{% endif %}</option>
           {% for bot in bots %}
             <option value="{{ bot.alias }}">{{ bot.alias }}</option>
           {% endfor %}
         </select>
         <label for="channel_alias">{{ t("web.draft_detail.channel_alias") }}</label>
         <select id="channel_alias" name="channel_alias">
-          <option value="">{{ t("web.draft_detail.use_default") }}{% if default %} ({{ default.channel.alias }}){% endif %}</option>
+          <option value="">{% if default %}{{ t("web.draft_detail.use_default_value", value=default.channel.alias) }}{% else %}{{ t("web.draft_detail.use_default") }}{% endif %}</option>
           {% for channel in channels %}
             <option value="{{ channel.alias }}">{{ channel.alias }}</option>
           {% endfor %}

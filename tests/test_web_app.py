@@ -259,6 +259,9 @@ def test_composer_shows_ready_default_target(ctx, web_settings):
     assert "Ready to publish" in response.text
     assert "news" in response.text
     assert "town" in response.text
+    assert '<a class="meta-link" href="/drafts">' in response.text
+    assert '<a class="meta-link" href="/targets">' in response.text
+    assert '<a class="meta-link" href="/audit">' in response.text
 
 
 def test_composer_saves_draft(ctx, web_settings):
@@ -362,6 +365,27 @@ def test_draft_detail_uses_target_selects(ctx, web_settings):
     assert '<option value="news">news</option>' in response.text
     assert '<option value="town">town</option>' in response.text
     assert 'type="text" placeholder="Use default"' not in response.text
+
+
+def test_russian_draft_detail_uses_compact_default_options(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_preferences.set_locale("alice-id", "ru")
+    _ready_target(ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Русский черновик",
+        message_sha256="hash",
+    )
+
+    response = client.get(f"/drafts/{draft.id}")
+
+    assert response.status_code == 200
+    assert "По умолчанию: news" in response.text
+    assert "По умолчанию: town" in response.text
+    assert "Использовать по умолчанию (news)" not in response.text
+    assert "Использовать по умолчанию (town)" not in response.text
 
 
 def test_draft_detail_rejects_empty_update(ctx, web_settings):
