@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="workspace-header">
+    <div>
+      <p class="eyebrow">Composer</p>
+      <h1>New Mattermost post</h1>
+    </div>
+    <div class="workspace-meta">
+      <span>Drafts</span>
+      <span>Targets</span>
+      <span>Audit</span>
+    </div>
+  </section>
+
+  <section class="composer-layout">
+    <form class="composer-form" action="/drafts" method="post">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label for="message">Message</label>
+      <textarea id="message" name="message" rows="14" placeholder="Write the post body here.">{{ draft_message }}</textarea>
+      <div class="form-actions">
+        <button type="submit">Save draft</button>
+      </div>
+    </form>
+    <aside class="side-panel" aria-label="Posting defaults">
+      <h2>Targets</h2>
+      <dl>
+        <div>
+          <dt>Bot</dt>
+          <dd>Not selected</dd>
+        </div>
+        <div>
+          <dt>Channel</dt>
+          <dd>Not selected</dd>
+        </div>
+      </dl>
+    </aside>
+  </section>
+{% endblock %}

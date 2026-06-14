@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} - mm-post-bot</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">mm-post-bot</a>
+      {% if session %}
+        <nav class="primary-nav" aria-label="Primary">
+          <a class="{% if active_page == 'composer' %}active{% endif %}" href="/">Composer</a>
+          <a href="/drafts">Drafts</a>
+          <a href="/targets">Targets</a>
+          <a href="/audit">Audit</a>
+        </nav>
+        <div class="user-chip">{{ session.username }}</div>
+      {% endif %}
+    </header>
+    <main class="shell">
+      {% if content %}
+        <section class="notice">
+          <h1>{{ title }}</h1>
+          <p>{{ content }}</p>
+        </section>
+      {% else %}
+        {% block content %}{% endblock %}
+      {% endif %}
+    </main>
+  </body>
+</html>
