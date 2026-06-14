@@ -6,7 +6,7 @@ from typing import Annotated, Any, cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from ..commands.context import CommandContext
@@ -176,6 +176,7 @@ def _targets_context(
     channel_query: str = "",
     channel_search_results: list[dict[str, str]] | None = None,
     channel_search_performed: bool = False,
+    channel_search_open: bool = False,
 ) -> dict[str, Any]:
     context = _authenticated_context(
         request,
@@ -190,6 +191,7 @@ def _targets_context(
     context["channel_query"] = channel_query
     context["channel_search_results"] = channel_search_results or []
     context["channel_search_performed"] = channel_search_performed
+    context["channel_search_open"] = channel_search_open
     return context
 
 
@@ -241,6 +243,10 @@ def _posted_channel_result(channel_id: str, label: str) -> list[dict[str, str]]:
     if not channel_id:
         return []
     return [{"id": channel_id, "label": label or channel_id}]
+
+
+def _wants_json(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "")
 
 
 def _command_context(request: Request, session: WebSession) -> CommandContext:
@@ -467,21 +473,12 @@ def audit(
 
 
 @router.get("/targets")
-async def targets(
+def targets(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
-    channel_query: Annotated[str, Query()] = "",
     channel_added: Annotated[str | None, Query()] = None,
 ) -> Response:
-    query = channel_query.strip()
-    channel_search_results: list[dict[str, str]] = []
-    error_message = None
-    if query:
-        try:
-            channel_search_results = await _search_mattermost_channels(request, query)
-        except MattermostError:
-            error_message = _web_error(request, session, "channel_search_failed")
     success_message = None
     if channel_added:
         success_message = _translator(_session_locale(request, session))(
@@ -492,17 +489,32 @@ async def targets(
         request,
         session=session,
         csrf=csrf,
-        error_message=error_message,
         success_message=success_message,
-        channel_query=query,
-        channel_search_results=channel_search_results,
-        channel_search_performed=bool(query),
     )
     return templates.TemplateResponse(
         request=request,
         name="targets.html",
         context=context,
     )
+
+
+@router.get("/targets/channels/search")
+async def search_channels(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    q: Annotated[str, Query()] = "",
+) -> Response:
+    query = q.strip()
+    if len(query) < 2:
+        return JSONResponse({"results": []})
+    try:
+        results = await _search_mattermost_channels(request, query)
+    except MattermostError:
+        return JSONResponse(
+            {"detail": _web_error(request, session, "channel_search_failed")},
+            status_code=502,
+        )
+    return JSONResponse({"results": results})
 
 
 @router.post("/targets/channels")
@@ -518,16 +530,20 @@ def add_channel_from_search(
     selected_channel_id = channel_id.strip()
     selected_channel_label = channel_label.strip() or selected_channel_id
     if not alias or not selected_channel_id:
+        error_message = _web_error(request, session, "channel_add_invalid")
+        if _wants_json(request):
+            return JSONResponse({"detail": error_message}, status_code=400)
         context = _targets_context(
             request,
             session=session,
             csrf=csrf_token(request),
-            error_message=_web_error(request, session, "channel_add_invalid"),
+            error_message=error_message,
             channel_search_results=_posted_channel_result(
                 selected_channel_id,
                 selected_channel_label,
             ),
             channel_search_performed=bool(selected_channel_id),
+            channel_search_open=True,
         )
         return templates.TemplateResponse(
             request=request,
@@ -542,17 +558,21 @@ def add_channel_from_search(
     except LookupError:
         pass
     else:
+        error_message = _web_error(request, session, "channel_alias_duplicate")
+        if _wants_json(request):
+            return JSONResponse({"detail": error_message}, status_code=400)
         context = _targets_context(
             request,
             session=session,
             csrf=csrf_token(request),
-            error_message=_web_error(request, session, "channel_alias_duplicate"),
+            error_message=error_message,
             channel_query=alias,
             channel_search_results=_posted_channel_result(
                 selected_channel_id,
                 selected_channel_label,
             ),
             channel_search_performed=True,
+            channel_search_open=True,
         )
         return templates.TemplateResponse(
             request=request,
@@ -566,6 +586,19 @@ def add_channel_from_search(
         alias=alias,
         channel_id=selected_channel_id,
     )
+    message = _translator(_session_locale(request, session))(
+        "web.targets.channel_added_banner",
+        alias=alias,
+    )
+    if _wants_json(request):
+        return JSONResponse(
+            {
+                "success": True,
+                "alias": alias,
+                "channel_id": selected_channel_id,
+                "message": message,
+            }
+        )
     return RedirectResponse(f"/targets?channel_added={quote(alias, safe='')}", status_code=303)
 
 

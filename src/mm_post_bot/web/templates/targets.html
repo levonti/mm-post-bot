@@ -34,57 +34,6 @@
     {% endif %}
   </section>
 
-  <section class="channel-search-panel" aria-label="{{ t('web.targets.channel_search_aria') }}">
-    <div class="channel-search-copy">
-      <h2>{{ t("web.targets.channel_search") }}</h2>
-      <p>{{ t("web.targets.channel_search_body") }}</p>
-    </div>
-
-    <form class="channel-search-form" action="/targets" method="get">
-      <label for="channel_query">{{ t("web.targets.channel_search_query") }}</label>
-      <div class="channel-search-controls">
-        <input
-          id="channel_query"
-          name="channel_query"
-          type="search"
-          value="{{ channel_query }}"
-          placeholder="{{ t('web.targets.channel_search_placeholder') }}"
-          autocomplete="off"
-        >
-        <button type="submit">{{ t("web.targets.channel_search_submit") }}</button>
-      </div>
-    </form>
-
-    {% if channel_search_results %}
-      <form class="channel-add-form" action="/targets/channels" method="post">
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <div>
-          <label for="search_channel_alias">{{ t("web.targets.channel_search_alias") }}</label>
-          <input
-            id="search_channel_alias"
-            name="channel_alias"
-            type="text"
-            value="{{ channel_query }}"
-            placeholder="{{ t('web.targets.channel_search_alias_placeholder') }}"
-            autocomplete="off"
-            required
-          >
-        </div>
-        <div>
-          <label for="search_channel_id">{{ t("web.targets.channel_search_channel") }}</label>
-          <select id="search_channel_id" name="channel_id" required>
-            {% for result in channel_search_results %}
-              <option value="{{ result.id }}">{{ result.label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <button type="submit">{{ t("web.targets.channel_search_add") }}</button>
-      </form>
-    {% elif channel_search_performed %}
-      <p class="muted-text">{{ t("web.targets.channel_search_empty") }}</p>
-    {% endif %}
-  </section>
-
   <section class="target-layout">
     <div class="target-column">
       <h2>{{ t("web.targets.bots") }}</h2>
@@ -103,20 +52,80 @@
     </div>
 
     <div class="target-column">
-      <h2>{{ t("web.targets.channels") }}</h2>
-      {% if channels %}
-        <ul class="target-list">
-          {% for channel in channels %}
-            <li>
-              <strong>{{ channel.alias }}</strong>
-              <span>{{ channel.channel_id }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="muted-text">{{ t("web.targets.no_channels") }}</p>
-      {% endif %}
+      <div class="target-column-header">
+        <h2>{{ t("web.targets.channels") }}</h2>
+        <button
+          class="secondary-button"
+          type="button"
+          data-channel-search-toggle
+          aria-controls="channel-add-panel"
+          aria-expanded="{% if channel_search_open %}true{% else %}false{% endif %}"
+        >
+          {{ t("web.targets.channel_search_add") }}
+        </button>
+      </div>
+      <ul class="target-list" data-channel-list {% if not channels %}hidden{% endif %}>
+        {% for channel in channels %}
+          <li>
+            <strong>{{ channel.alias }}</strong>
+            <span>{{ channel.channel_id }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="muted-text" data-channel-empty {% if channels %}hidden{% endif %}>{{ t("web.targets.no_channels") }}</p>
       <p class="target-hint">@postbot !channel add-current &lt;alias&gt;</p>
+
+      <div id="channel-add-panel" {% if not channel_search_open %}hidden{% endif %} class="channel-inline-panel" data-channel-search data-search-url="/targets/channels/search" data-min-query-message="{{ t('web.targets.channel_search_min_query') }}" data-loading-message="{{ t('web.targets.channel_search_loading') }}" data-empty-message="{{ t('web.targets.channel_search_empty') }}" data-error-message="{{ t('web.error.channel_search_failed') }}">
+        <div class="channel-search-copy">
+          <h3>{{ t("web.targets.channel_search") }}</h3>
+          <p>{{ t("web.targets.channel_search_body") }}</p>
+        </div>
+
+        <form class="channel-search-form" action="/targets/channels/search" method="get" data-channel-search-form>
+          <label for="channel_query">{{ t("web.targets.channel_search_query") }}</label>
+          <input
+            id="channel_query"
+            name="q"
+            type="search"
+            value="{{ channel_query }}"
+            placeholder="{{ t('web.targets.channel_search_placeholder') }}"
+            autocomplete="off"
+            data-channel-search-input
+          >
+          <p class="muted-text channel-search-status" aria-live="polite" data-channel-search-status>{{ t("web.targets.channel_search_min_query") }}</p>
+          <ul class="channel-result-list" data-channel-search-results {% if not channel_search_results %}hidden{% endif %}>
+            {% for result in channel_search_results %}
+              <li>
+                <button class="channel-result-button" type="button" data-channel-id="{{ result.id }}" data-channel-name="{{ result.name }}" data-channel-label="{{ result.label }}">
+                  {{ result.label }}
+                </button>
+              </li>
+            {% endfor %}
+          </ul>
+        </form>
+
+        <form class="channel-add-form" action="/targets/channels" method="post" data-channel-add-form {% if not channel_search_results %}hidden{% endif %}>
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="channel_id" data-channel-id-input value="{% if channel_search_results %}{{ channel_search_results[0].id }}{% endif %}">
+          <input type="hidden" name="channel_label" data-channel-label-input value="{% if channel_search_results %}{{ channel_search_results[0].label }}{% endif %}">
+          <p class="selected-channel">
+            {{ t("web.targets.channel_search_selected") }}
+            <strong data-channel-selected-label>{% if channel_search_results %}{{ channel_search_results[0].label }}{% endif %}</strong>
+          </p>
+          <label for="search_channel_alias">{{ t("web.targets.channel_search_alias") }}</label>
+          <input
+            id="search_channel_alias"
+            name="channel_alias"
+            type="text"
+            value="{{ channel_query }}"
+            placeholder="{{ t('web.targets.channel_search_alias_placeholder') }}"
+            autocomplete="off"
+            required
+            data-channel-alias-input
+          >
+          <button type="submit" data-channel-save-button>{{ t("web.targets.channel_search_save") }}</button>
+        </form>
+      </div>
     </div>
 
     <div class="target-column">

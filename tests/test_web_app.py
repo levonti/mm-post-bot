@@ -610,10 +610,11 @@ def test_targets_page_lists_aliases_and_default(ctx, web_settings):
     assert "town" in response.text
     assert "Default: news -&gt; town" in response.text
     assert "@postbot !channel add-current &lt;alias&gt;" in response.text
-    assert "Search Mattermost channels" in response.text
+    assert "Add channel" in response.text
+    assert 'id="channel-add-panel" hidden' in response.text
 
 
-def test_targets_searches_mattermost_channels(ctx, web_settings, monkeypatch):
+def test_targets_ignores_legacy_channel_query(ctx, web_settings, monkeypatch):
     monkeypatch.setattr(web_routes, "MattermostClient", FakeChannelSearchMM)
     FakeChannelSearchMM.instances.clear()
     app = create_app(settings=web_settings, conn=ctx.conn)
@@ -623,10 +624,31 @@ def test_targets_searches_mattermost_channels(ctx, web_settings, monkeypatch):
     response = client.get("/targets?channel_query=town")
 
     assert response.status_code == 200
-    assert "Town Square" in response.text
-    assert "demo/town-square" in response.text
-    assert 'value="town-channel-id"' in response.text
-    assert 'name="channel_alias"' in response.text
+    assert "Town Square" not in response.text
+    assert FakeChannelSearchMM.instances == []
+
+
+def test_targets_channel_search_endpoint_returns_json(ctx, web_settings, monkeypatch):
+    monkeypatch.setattr(web_routes, "MattermostClient", FakeChannelSearchMM)
+    FakeChannelSearchMM.instances.clear()
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+
+    response = client.get("/targets/channels/search?q=town")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [
+            {
+                "id": "town-channel-id",
+                "name": "town-square",
+                "display_name": "Town Square",
+                "team_name": "demo",
+                "label": "Town Square (demo/town-square)",
+            }
+        ]
+    }
     assert FakeChannelSearchMM.instances[0].closed is True
 
 
@@ -653,6 +675,35 @@ def test_add_channel_from_search_result(ctx, web_settings):
     assert saved.channel_id == "town-channel-id"
 
 
+def test_add_channel_from_search_result_returns_json(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/targets").text)
+
+    response = client.post(
+        "/targets/channels",
+        data={
+            "csrf": csrf,
+            "channel_alias": "town",
+            "channel_id": "town-channel-id",
+            "channel_label": "demo/town-square",
+        },
+        headers={"accept": "application/json"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "alias": "town",
+        "channel_id": "town-channel-id",
+        "message": "Channel alias town added.",
+    }
+    saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+    assert saved.channel_id == "town-channel-id"
+
+
 def test_add_channel_from_search_rejects_duplicate_alias(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -675,6 +726,30 @@ def test_add_channel_from_search_rejects_duplicate_alias(ctx, web_settings):
     assert response.headers["content-type"].startswith("text/html")
     assert 'role="alert"' in response.text
     assert "Channel alias already exists" in response.text
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "existing-id"
+
+
+def test_add_channel_from_search_rejects_duplicate_alias_json(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="existing-id")
+    csrf = _csrf_from(client.get("/targets").text)
+
+    response = client.post(
+        "/targets/channels",
+        data={
+            "csrf": csrf,
+            "channel_alias": "town",
+            "channel_id": "town-channel-id",
+            "channel_label": "demo/town-square",
+        },
+        headers={"accept": "application/json"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Channel alias already exists"}
     assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "existing-id"
 
 
