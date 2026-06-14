@@ -12,6 +12,7 @@ from ..repository import (
     UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
+    WebLoginTokenRepo,
 )
 
 
@@ -28,6 +29,7 @@ class CommandContext:
     user_post_default_repo: UserPostDefaultRepo
     draft_capture_repo: DraftCaptureRepo
     post_draft_repo: PostDraftRepo
+    web_login_token_repo: WebLoginTokenRepo
     audit_repo: AuditRepo
     manager_mm: MattermostClient
     manager_user_id: str
@@ -36,6 +38,8 @@ class CommandContext:
     mm_url: str
     token_encryption_key: str
     mm_verify_ssl: bool
+    web_base_url: str
+    web_login_token_ttl_seconds: int
     default_locale: str
     locale: str
 

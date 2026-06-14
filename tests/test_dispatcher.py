@@ -94,6 +94,7 @@ def _draft_body_ctx(
         user_post_default_repo=cast(Any, _UserPostDefaultRepo()),
         draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
         post_draft_repo=cast(Any, _PostDraftRepo()),
+        web_login_token_repo=cast(Any, object()),
         audit_repo=cast(Any, object()),
         manager_mm=cast(Any, object()),
         manager_user_id="manager-id",
@@ -102,6 +103,8 @@ def _draft_body_ctx(
         mm_url="https://mm.internal",
         token_encryption_key="key",
         mm_verify_ssl=True,
+        web_base_url="https://posts.internal",
+        web_login_token_ttl_seconds=300,
         default_locale="en",
         locale=locale,
     )

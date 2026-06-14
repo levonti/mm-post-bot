@@ -22,8 +22,10 @@ from mm_post_bot.repository import (
     UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
+    WebLoginTokenRepo,
 )
 from mm_post_bot.security import encrypt_token, fingerprint_token, hash_message
+from mm_post_bot.services.web_auth import hash_login_token
 
 POSTGRES_IMAGE = "postgres:15-alpine"
 
@@ -134,6 +136,7 @@ class CommandFixture:
     user_post_defaults: UserPostDefaultRepo
     draft_captures: DraftCaptureRepo
     post_drafts: PostDraftRepo
+    web_login_tokens: WebLoginTokenRepo
     audits: AuditRepo
     manager_mm: FakeMM
     token_identities: dict[str, dict[str, Any] | BaseException]
@@ -161,6 +164,7 @@ class CommandFixture:
             user_post_default_repo=self.user_post_defaults,
             draft_capture_repo=self.draft_captures,
             post_draft_repo=self.post_drafts,
+            web_login_token_repo=self.web_login_tokens,
             audit_repo=self.audits,
             manager_mm=cast(MattermostClient, self.manager_mm),
             manager_user_id="manager-id",
@@ -169,6 +173,8 @@ class CommandFixture:
             mm_url="https://mm.internal",
             token_encryption_key=FERNET_KEY,
             mm_verify_ssl=True,
+            web_base_url="https://posts.internal",
+            web_login_token_ttl_seconds=300,
             default_locale="en",
             locale=self.user_preferences.get_locale(caller_user_id) or "en",
         )
@@ -207,6 +213,7 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
         user_post_defaults=UserPostDefaultRepo(pg_conn),
         draft_captures=DraftCaptureRepo(pg_conn),
         post_drafts=PostDraftRepo(pg_conn),
+        web_login_tokens=WebLoginTokenRepo(pg_conn),
         audits=AuditRepo(pg_conn),
         manager_mm=FakeMM(),
         token_identities=TOKEN_IDENTITIES,
@@ -2173,3 +2180,31 @@ async def test_send_requires_approved_user(
 
     assert reply is not None
     assert expected in reply.lower()
+
+
+async def test_web_command_requires_dm(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice", channel_type="O"),
+        "!web",
+    )
+
+    assert reply == "Run !web in DM so the login link is private."
+
+
+async def test_web_command_returns_one_time_login_link(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "Open web UI:" in reply
+    assert "https://posts.internal/login?token=" in reply
+    token = reply.split("token=", 1)[1].split()[0]
+    assert (
+        ctx.web_login_tokens.get_usable(hash_login_token(token), now=datetime.now(UTC))
+        is not None
+    )

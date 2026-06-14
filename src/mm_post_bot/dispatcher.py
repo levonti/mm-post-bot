@@ -27,6 +27,7 @@ from .repository import (
     UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
+    WebLoginTokenRepo,
 )
 from .security import hash_message
 
@@ -101,6 +102,7 @@ class CommandContextFactory:
             user_post_default_repo=UserPostDefaultRepo(self._conn),
             draft_capture_repo=DraftCaptureRepo(self._conn),
             post_draft_repo=PostDraftRepo(self._conn),
+            web_login_token_repo=WebLoginTokenRepo(self._conn),
             audit_repo=AuditRepo(self._conn),
             manager_mm=self._manager_mm,
             manager_user_id=self._manager_user_id,
@@ -109,6 +111,8 @@ class CommandContextFactory:
             mm_url=str(self._settings.mm_url).rstrip("/"),
             token_encryption_key=self._settings.token_encryption_key,
             mm_verify_ssl=self._settings.mm_verify_ssl,
+            web_base_url=str(self._settings.web_base_url).rstrip("/"),
+            web_login_token_ttl_seconds=self._settings.web_login_token_ttl_seconds,
             default_locale=default_locale,
             locale=locale,
         )

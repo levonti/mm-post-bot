@@ -80,11 +80,15 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.publishing.send": (
             "!send <draft_id> [--bot <alias>] [--channel <channel_alias>] - publish a draft"
         ),
+        "help.publishing.web": "!web - open the web UI",
         "help.admin.title": "Admin",
         "help.admin.approve": "!user approve <username|user_id> - approve a user",
         "help.admin.block": "!user block <username|user_id> - block a user",
         "help.admin.unblock": "!user unblock <username|user_id> - unblock and approve a user",
         "help.admin.list": "!user list [pending|approved|blocked] - list users",
+        "web.usage": "Usage: !web",
+        "web.dm_only": "Run !web in DM so the login link is private.",
+        "web.link": "Open web UI: {url}\nThis link is single-use and expires soon.",
         "bot.dm_only": "Please add bot tokens in a direct message.",
         "bot.add_usage": "Usage: !bot add <alias> <token>",
         "bot.duplicate": (
@@ -321,11 +325,15 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.publishing.send": (
             "!send <draft_id> [--bot <alias>] [--channel <channel_alias>] - опубликовать черновик"
         ),
+        "help.publishing.web": "!web - открыть web UI",
         "help.admin.title": "Администрирование",
         "help.admin.approve": "!user approve <username|user_id> - подтвердить пользователя",
         "help.admin.block": "!user block <username|user_id> - заблокировать пользователя",
         "help.admin.unblock": "!user unblock <username|user_id> - разблокировать пользователя",
         "help.admin.list": "!user list [pending|approved|blocked] - показать пользователей",
+        "web.usage": "Использование: !web",
+        "web.dm_only": "Выполните !web в DM, чтобы ссылка входа осталась приватной.",
+        "web.link": "Открыть web UI: {url}\nСсылка одноразовая и скоро истечёт.",
         "bot.dm_only": "Добавляйте token бота только в direct message.",
         "bot.add_usage": "Использование: !bot add <alias> <token>",
         "bot.duplicate": (
