@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import Settings
 from ..db import DbConn, connect_postgres, init_schema
+from .api import api_router
 from .routes import router
 
 
@@ -35,5 +36,6 @@ def create_app(settings: Settings, conn: DbConn, *, owns_conn: bool = False) -> 
 
     web_dir = Path(__file__).parent
     app.mount("/static", StaticFiles(directory=web_dir / "static"), name="static")
+    app.include_router(api_router)
     app.include_router(router)
     return app
