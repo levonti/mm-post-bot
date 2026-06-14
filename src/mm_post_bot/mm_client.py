@@ -75,6 +75,20 @@ class MattermostClient:
             await self._request("POST", "/channels/direct", json=[user_id_a, user_id_b]),
         )
 
+    async def get_my_teams(self) -> list[dict[str, Any]]:
+        return cast(list[dict[str, Any]], await self._request("GET", "/users/me/teams"))
+
+    async def search_channels(self, team_id: str, term: str) -> list[dict[str, Any]]:
+        encoded_team_id = quote(team_id, safe="")
+        return cast(
+            list[dict[str, Any]],
+            await self._request(
+                "POST",
+                f"/teams/{encoded_team_id}/channels/search",
+                json={"term": term},
+            ),
+        )
+
     async def get_channel_by_team_and_name(
         self,
         team_name: str,

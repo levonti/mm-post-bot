@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from mm_post_bot.config import Settings
 from mm_post_bot.mm_client import MattermostError
 from mm_post_bot.security import encrypt_token, hash_message
 from mm_post_bot.services.web_auth import create_login_token, hash_login_token
+from mm_post_bot.web import routes as web_routes
 from mm_post_bot.web.app import create_app
 
 ctx = _commands_ctx
@@ -63,6 +65,47 @@ def _ready_target(ctx):
     )
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
     ctx.user_post_defaults.set_for_owner("alice-id", bot_alias="news", channel_alias="town")
+
+
+class FakeChannelSearchMM:
+    instances: ClassVar[list[FakeChannelSearchMM]] = []
+    teams: ClassVar[list[dict[str, str]]] = [{"id": "team-id", "name": "demo"}]
+    results_by_term: ClassVar[dict[str, list[dict[str, str]]]] = {
+        "town": [
+            {
+                "id": "town-channel-id",
+                "name": "town-square",
+                "display_name": "Town Square",
+                "type": "O",
+                "team_id": "team-id",
+            }
+        ]
+    }
+
+    def __init__(
+        self,
+        rest_base: str,
+        token: str,
+        *,
+        timeout: float = 15.0,
+        verify_ssl: bool = True,
+    ) -> None:
+        self.rest_base = rest_base
+        self.token = token
+        self.timeout = timeout
+        self.verify_ssl = verify_ssl
+        self.closed = False
+        FakeChannelSearchMM.instances.append(self)
+
+    async def get_my_teams(self) -> list[dict[str, str]]:
+        return self.teams
+
+    async def search_channels(self, team_id: str, term: str) -> list[dict[str, str]]:
+        assert team_id == "team-id"
+        return self.results_by_term.get(term, [])
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 def test_login_requires_valid_token(ctx, web_settings):
@@ -567,6 +610,72 @@ def test_targets_page_lists_aliases_and_default(ctx, web_settings):
     assert "town" in response.text
     assert "Default: news -&gt; town" in response.text
     assert "@postbot !channel add-current &lt;alias&gt;" in response.text
+    assert "Search Mattermost channels" in response.text
+
+
+def test_targets_searches_mattermost_channels(ctx, web_settings, monkeypatch):
+    monkeypatch.setattr(web_routes, "MattermostClient", FakeChannelSearchMM)
+    FakeChannelSearchMM.instances.clear()
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+
+    response = client.get("/targets?channel_query=town")
+
+    assert response.status_code == 200
+    assert "Town Square" in response.text
+    assert "demo/town-square" in response.text
+    assert 'value="town-channel-id"' in response.text
+    assert 'name="channel_alias"' in response.text
+    assert FakeChannelSearchMM.instances[0].closed is True
+
+
+def test_add_channel_from_search_result(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = _csrf_from(client.get("/targets").text)
+
+    response = client.post(
+        "/targets/channels",
+        data={
+            "csrf": csrf,
+            "channel_alias": "town",
+            "channel_id": "town-channel-id",
+            "channel_label": "demo/town-square",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/targets?channel_added=town"
+    saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+    assert saved.channel_id == "town-channel-id"
+
+
+def test_add_channel_from_search_rejects_duplicate_alias(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="existing-id")
+    csrf = _csrf_from(client.get("/targets").text)
+
+    response = client.post(
+        "/targets/channels",
+        data={
+            "csrf": csrf,
+            "channel_alias": "town",
+            "channel_id": "town-channel-id",
+            "channel_label": "demo/town-square",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'role="alert"' in response.text
+    assert "Channel alias already exists" in response.text
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "existing-id"
 
 
 def test_set_and_clear_default_from_targets(ctx, web_settings):

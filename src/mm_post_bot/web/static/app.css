@@ -261,6 +261,7 @@ textarea {
 }
 
 input[type="text"],
+input[type="search"],
 select {
   width: 100%;
   min-height: 42px;
@@ -274,6 +275,7 @@ select {
 
 textarea:focus,
 input[type="text"]:focus,
+input[type="search"]:focus,
 select:focus {
   border-color: var(--focus);
   outline: 3px solid rgb(41 95 188 / 18%);
@@ -461,6 +463,47 @@ button:disabled {
   font-weight: 700;
 }
 
+.channel-search-panel {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.channel-search-copy h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  letter-spacing: 0;
+}
+
+.channel-search-copy p {
+  max-width: 680px;
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.channel-search-form,
+.channel-add-form {
+  display: grid;
+  gap: 10px;
+}
+
+.channel-search-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.channel-add-form {
+  grid-template-columns: minmax(130px, 180px) minmax(0, 1fr) auto;
+  align-items: end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .target-layout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -640,6 +683,11 @@ dd {
 
   .composer-layout,
   .target-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .channel-search-controls,
+  .channel-add-form {
     grid-template-columns: 1fr;
   }
 

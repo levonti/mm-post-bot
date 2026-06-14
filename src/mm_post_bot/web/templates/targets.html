@@ -34,6 +34,57 @@
     {% endif %}
   </section>
 
+  <section class="channel-search-panel" aria-label="{{ t('web.targets.channel_search_aria') }}">
+    <div class="channel-search-copy">
+      <h2>{{ t("web.targets.channel_search") }}</h2>
+      <p>{{ t("web.targets.channel_search_body") }}</p>
+    </div>
+
+    <form class="channel-search-form" action="/targets" method="get">
+      <label for="channel_query">{{ t("web.targets.channel_search_query") }}</label>
+      <div class="channel-search-controls">
+        <input
+          id="channel_query"
+          name="channel_query"
+          type="search"
+          value="{{ channel_query }}"
+          placeholder="{{ t('web.targets.channel_search_placeholder') }}"
+          autocomplete="off"
+        >
+        <button type="submit">{{ t("web.targets.channel_search_submit") }}</button>
+      </div>
+    </form>
+
+    {% if channel_search_results %}
+      <form class="channel-add-form" action="/targets/channels" method="post">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <div>
+          <label for="search_channel_alias">{{ t("web.targets.channel_search_alias") }}</label>
+          <input
+            id="search_channel_alias"
+            name="channel_alias"
+            type="text"
+            value="{{ channel_query }}"
+            placeholder="{{ t('web.targets.channel_search_alias_placeholder') }}"
+            autocomplete="off"
+            required
+          >
+        </div>
+        <div>
+          <label for="search_channel_id">{{ t("web.targets.channel_search_channel") }}</label>
+          <select id="search_channel_id" name="channel_id" required>
+            {% for result in channel_search_results %}
+              <option value="{{ result.id }}">{{ result.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">{{ t("web.targets.channel_search_add") }}</button>
+      </form>
+    {% elif channel_search_performed %}
+      <p class="muted-text">{{ t("web.targets.channel_search_empty") }}</p>
+    {% endif %}
+  </section>
+
   <section class="target-layout">
     <div class="target-column">
       <h2>{{ t("web.targets.bots") }}</h2>

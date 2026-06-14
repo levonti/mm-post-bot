@@ -63,6 +63,35 @@ async def test_create_direct_channel(client):
 
 
 @respx.mock
+async def test_get_my_teams(client):
+    route = respx.get("https://mm.example/api/v4/users/me/teams").mock(
+        return_value=httpx.Response(200, json=[{"id": "team-id", "name": "demo"}])
+    )
+
+    teams = await client.get_my_teams()
+
+    assert teams[0]["name"] == "demo"
+    assert route.called
+    await client.aclose()
+
+
+@respx.mock
+async def test_search_channels(client):
+    route = respx.post("https://mm.example/api/v4/teams/team-id/channels/search").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"id": "channel-id", "name": "town-square", "display_name": "Town Square"}],
+        )
+    )
+
+    channels = await client.search_channels("team-id", "town")
+
+    assert channels[0]["id"] == "channel-id"
+    assert json.loads(route.calls.last.request.content) == {"term": "town"}
+    await client.aclose()
+
+
+@respx.mock
 async def test_get_user_by_username_url_encodes_and_strips_mention(client):
     route = respx.get("https://mm.example/api/v4/users/username/admin%20user").mock(
         return_value=httpx.Response(200, json={"id": "admin-id", "username": "admin user"})
