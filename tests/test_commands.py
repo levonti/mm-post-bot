@@ -201,7 +201,13 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     if find_spec("mm_post_bot.commands.bot") is not None:
         monkeypatch.setattr("mm_post_bot.commands.bot.MattermostClient", FakeTokenMM)
     if find_spec("mm_post_bot.commands.send") is not None:
-        monkeypatch.setattr("mm_post_bot.commands.send.MattermostClient", FakeTokenMM)
+        monkeypatch.setattr(
+            "mm_post_bot.commands.send.MattermostClient",
+            FakeTokenMM,
+            raising=False,
+        )
+    if find_spec("mm_post_bot.services.posting") is not None:
+        monkeypatch.setattr("mm_post_bot.services.posting.MattermostClient", FakeTokenMM)
 
     users = UserRepo(pg_conn)
     yield CommandFixture(
