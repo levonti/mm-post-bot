@@ -557,7 +557,7 @@ def test_web_login_token_consume_is_one_time(repos):
 
     assert consumed is not None
     assert consumed.id == created.id
-    assert consumed.used_at is not None
+    assert consumed.used_at == now
     assert second is None
 
 

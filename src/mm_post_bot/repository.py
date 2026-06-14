@@ -310,7 +310,7 @@ class WebLoginTokenRepo:
               AND expires_at > %s
             RETURNING *
             """,
-            (_now(), token_sha256, now),
+            (now, token_sha256, now),
         ).fetchone()
         if row is None:
             return None

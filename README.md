@@ -50,6 +50,9 @@ cp .env.example .env
 | `MM_VERIFY_SSL` | no | Проверять TLS-сертификат Mattermost, по умолчанию `true`. |
 | `DB_URL` | yes | PostgreSQL DSN для локального запуска через `uv`. |
 | `TOKEN_ENCRYPTION_KEY` | yes | Fernet key для шифрования user bot tokens. |
+| `WEB_SESSION_SECRET` | yes | Secret длиной минимум 32 символа для signed web login/session support. |
+| `WEB_BASE_URL` | no | Базовый URL будущего web UI, по умолчанию `http://localhost:8080`. |
+| `WEB_LOGIN_TOKEN_TTL_SECONDS` | no | TTL web login tokens в секундах, по умолчанию `300`. |
 | `LOG_LEVEL` | no | Уровень логирования, по умолчанию `INFO`. |
 | `MAX_EVENT_TASKS` | no | Максимум одновременно обрабатываемых Mattermost events, по умолчанию `32`. |
 | `DEFAULT_LOCALE` | no | Язык ответов по умолчанию: `en` или `ru`, по умолчанию `en`. |
@@ -228,6 +231,8 @@ posting bot account.
   отклонен при старте.
 - `TOKEN_ENCRYPTION_KEY` должен храниться как secret. Потеря ключа сделает сохраненные токены
   нерасшифровываемыми.
+- `WEB_SESSION_SECRET` должен храниться как secret и быть длиной минимум 32 символа; он нужен
+  для signed web login/session support.
 - Токен, добавленный через `!bot add`, доступен приложению для отправки сообщений от имени
   соответствующего Mattermost-бота.
 - Удаление alias через `!bot remove` мягкое: старые audit records сохраняются.
