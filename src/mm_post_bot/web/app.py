@@ -3,12 +3,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Settings
 from ..db import DbConn, connect_postgres, init_schema
 from .api import api_router
 from .routes import router
+
+
+def _spa_index(web_dir: Path) -> Path:
+    return web_dir / "static" / "spa" / "index.html"
 
 
 def create_app_from_settings(settings: Settings) -> FastAPI:
@@ -21,7 +26,13 @@ def create_app_from_settings(settings: Settings) -> FastAPI:
     return create_app(settings=settings, conn=conn, owns_conn=True)
 
 
-def create_app(settings: Settings, conn: DbConn, *, owns_conn: bool = False) -> FastAPI:
+def create_app(
+    settings: Settings,
+    conn: DbConn,
+    *,
+    owns_conn: bool = False,
+    web_dir: Path | None = None,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
@@ -34,8 +45,18 @@ def create_app(settings: Settings, conn: DbConn, *, owns_conn: bool = False) -> 
     app.state.settings = settings
     app.state.conn = conn
 
-    web_dir = Path(__file__).parent
-    app.mount("/static", StaticFiles(directory=web_dir / "static"), name="static")
+    resolved_web_dir = web_dir or Path(__file__).parent
+    app.mount("/static", StaticFiles(directory=resolved_web_dir / "static"), name="static")
+    spa_dir = resolved_web_dir / "static" / "spa"
+    spa_assets_dir = spa_dir / "assets"
+    if _spa_index(resolved_web_dir).is_file() and spa_assets_dir.is_dir():
+        app.mount("/app/assets", StaticFiles(directory=spa_assets_dir), name="spa-assets")
+
+        @app.get("/app")
+        @app.get("/app/{path:path}")
+        def react_app(path: str = "") -> FileResponse:
+            return FileResponse(_spa_index(resolved_web_dir))
+
     app.include_router(api_router)
     app.include_router(router)
     return app

@@ -806,3 +806,28 @@ def test_set_default_rejects_invalid_aliases(ctx, web_settings):
     assert 'role="alert"' in response.text
     assert "Target aliases are invalid" in response.text
     assert ctx.user_post_defaults.get_for_owner("alice-id") is None
+
+
+def test_react_preview_route_serves_spa_shell(ctx, web_settings, tmp_path):
+    spa_assets = tmp_path / "static" / "spa" / "assets"
+    spa_assets.mkdir(parents=True)
+    (tmp_path / "static" / "spa" / "index.html").write_text(
+        '<div id="root"></div><script src="/app/assets/preview.js"></script>',
+        encoding="utf-8",
+    )
+    (spa_assets / "preview.js").write_text("console.log('preview');", encoding="utf-8")
+    app = create_app(settings=web_settings, conn=ctx.conn, web_dir=tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/app")
+
+    assert response.status_code == 200
+    assert '<div id="root"></div>' in response.text
+
+    response = client.get("/app/drafts/123")
+    assert response.status_code == 200
+    assert '<div id="root"></div>' in response.text
+
+    asset_response = client.get("/app/assets/preview.js")
+    assert asset_response.status_code == 200
+    assert "console.log('preview');" in asset_response.text
