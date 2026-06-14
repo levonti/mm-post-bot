@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="workspace-header">
+    <div>
+      <p class="eyebrow">Targets</p>
+      <h1>Posting targets</h1>
+    </div>
+    <div class="workspace-meta">
+      <span>{{ bots|length }} bot{% if bots|length != 1 %}s{% endif %}</span>
+      <span>{{ channels|length }} channel{% if channels|length != 1 %}s{% endif %}</span>
+    </div>
+  </section>
+
+  <section class="target-status" aria-label="Default target">
+    {% if default %}
+      <p>Default: {{ default.bot.alias }} -> {{ default.channel.alias }}</p>
+    {% elif stale_default %}
+      <p>Default target is missing because its bot or channel was removed.</p>
+    {% else %}
+      <p>No default target selected.</p>
+    {% endif %}
+  </section>
+
+  <section class="target-layout">
+    <div class="target-column">
+      <h2>Bots</h2>
+      {% if bots %}
+        <ul class="target-list">
+          {% for bot in bots %}
+            <li>
+              <strong>{{ bot.alias }}</strong>
+              <span>{{ bot.bot_username }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted-text">No posting bots yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="target-column">
+      <h2>Channels</h2>
+      {% if channels %}
+        <ul class="target-list">
+          {% for channel in channels %}
+            <li>
+              <strong>{{ channel.alias }}</strong>
+              <span>{{ channel.channel_id }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted-text">No channels yet.</p>
+      {% endif %}
+      <p class="target-hint">@postbot !channel add-current &lt;alias&gt;</p>
+    </div>
+
+    <div class="target-column">
+      <h2>Default</h2>
+      <form class="target-form" action="/targets/default" method="post">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <label for="bot_alias">Bot alias</label>
+        <select id="bot_alias" name="bot_alias" required>
+          {% for bot in bots %}
+            <option value="{{ bot.alias }}" {% if default and default.bot.alias == bot.alias %}selected{% endif %}>{{ bot.alias }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="channel_alias">Channel alias</label>
+        <select id="channel_alias" name="channel_alias" required>
+          {% for channel in channels %}
+            <option value="{{ channel.alias }}" {% if default and default.channel.alias == channel.alias %}selected{% endif %}>{{ channel.alias }}</option>
+          {% endfor %}
+        </select>
+
+        <button type="submit" {% if not bots or not channels %}disabled{% endif %}>Set default</button>
+      </form>
+
+      <form class="target-clear-form" action="/targets/default/clear" method="post">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button class="danger-button" type="submit" {% if not default and not stale_default %}disabled{% endif %}>Clear default</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

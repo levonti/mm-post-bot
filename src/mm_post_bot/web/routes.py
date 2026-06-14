@@ -168,6 +168,57 @@ def draft_list(
     )
 
 
+@router.get("/targets")
+def targets(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    csrf: Annotated[str, Depends(csrf_token)],
+) -> Response:
+    repo_set = repos(request)
+    default = repo_set.user_post_defaults.get_for_owner(session.user_id)
+    stale_default = default is None and repo_set.user_post_defaults.has_for_owner(session.user_id)
+    return templates.TemplateResponse(
+        request=request,
+        name="targets.html",
+        context={
+            "title": "Targets",
+            "session": session,
+            "csrf_token": csrf,
+            "active_page": "targets",
+            "bots": repo_set.user_bots.list_for_owner(session.user_id),
+            "channels": repo_set.user_channels.list_for_owner(session.user_id),
+            "default": default,
+            "stale_default": stale_default,
+        },
+    )
+
+
+@router.post("/targets/default")
+def set_default_target(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    bot_alias: Annotated[str, Form(...)],
+    channel_alias: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> Response:
+    repos(request).user_post_defaults.set_for_owner(
+        session.user_id,
+        bot_alias=bot_alias,
+        channel_alias=channel_alias,
+    )
+    return RedirectResponse("/targets", status_code=303)
+
+
+@router.post("/targets/default/clear")
+def clear_default_target(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> Response:
+    repos(request).user_post_defaults.clear_for_owner(session.user_id)
+    return RedirectResponse("/targets", status_code=303)
+
+
 @router.get("/drafts/{draft_id}")
 def draft_detail(
     request: Request,

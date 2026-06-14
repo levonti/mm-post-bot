@@ -169,3 +169,64 @@ def test_draft_delete_marks_draft_deleted(ctx, web_settings):
     assert response.status_code == 303
     assert response.headers["location"] == "/drafts"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "deleted"
+
+
+def test_targets_page_lists_aliases_and_default(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_bots.add(
+        owner_user_id="alice-id",
+        alias="news",
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext="cipher",
+        token_fingerprint="fp",
+    )
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    ctx.user_post_defaults.set_for_owner("alice-id", bot_alias="news", channel_alias="town")
+
+    response = client.get("/targets")
+
+    assert response.status_code == 200
+    assert "news-bot" in response.text
+    assert "town" in response.text
+    assert "Default: news -> town" in response.text
+    assert "@postbot !channel add-current &lt;alias&gt;" in response.text
+
+
+def test_set_and_clear_default_from_targets(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_bots.add(
+        owner_user_id="alice-id",
+        alias="news",
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext="cipher",
+        token_fingerprint="fp",
+    )
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    csrf = _csrf_from(client.get("/targets").text)
+
+    response = client.post(
+        "/targets/default",
+        data={"csrf": csrf, "bot_alias": "news", "channel_alias": "town"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert ctx.user_post_defaults.get_for_owner("alice-id").bot.alias == "news"
+
+    csrf = _csrf_from(client.get("/targets").text)
+    response = client.post(
+        "/targets/default/clear",
+        data={"csrf": csrf},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert ctx.user_post_defaults.get_for_owner("alice-id") is None

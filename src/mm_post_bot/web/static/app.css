@@ -174,7 +174,19 @@ textarea {
   font: inherit;
 }
 
-textarea:focus {
+select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+textarea:focus,
+select:focus {
   border-color: var(--focus);
   outline: 3px solid rgb(41 95 188 / 18%);
 }
@@ -199,6 +211,11 @@ button {
 button:hover,
 button:focus-visible {
   background: var(--accent-strong);
+}
+
+button:disabled {
+  background: #98a2b3;
+  cursor: not-allowed;
 }
 
 .button-link,
@@ -310,6 +327,90 @@ button:focus-visible {
   color: var(--muted);
 }
 
+.target-status {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.target-status p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.target-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.target-column {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.target-column h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
+
+.target-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.target-list li {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.target-list li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.target-list span,
+.muted-text,
+.target-hint {
+  color: var(--muted);
+}
+
+.muted-text,
+.target-hint {
+  margin: 0;
+}
+
+.target-hint {
+  padding: 10px;
+  background: var(--surface-subtle);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
+}
+
+.target-form,
+.target-clear-form {
+  display: grid;
+  gap: 10px;
+}
+
+.target-clear-form {
+  padding-top: 4px;
+}
+
 .side-panel {
   padding: 18px;
 }
@@ -354,7 +455,8 @@ dd {
     display: grid;
   }
 
-  .composer-layout {
+  .composer-layout,
+  .target-layout {
     grid-template-columns: 1fr;
   }
 

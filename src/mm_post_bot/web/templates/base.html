@@ -13,7 +13,7 @@
         <nav class="primary-nav" aria-label="Primary">
           <a class="{% if active_page == 'composer' %}active{% endif %}" href="/">Composer</a>
           <a class="{% if active_page == 'drafts' %}active{% endif %}" href="/drafts">Drafts</a>
-          <a href="/targets">Targets</a>
+          <a class="{% if active_page == 'targets' %}active{% endif %}" href="/targets">Targets</a>
           <a href="/audit">Audit</a>
         </nav>
         <div class="user-chip">{{ session.username }}</div>
