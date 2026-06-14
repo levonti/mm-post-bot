@@ -101,6 +101,72 @@ a {
   background: #e5f6ea;
 }
 
+.target-column {
+  margin-top: 24px;
+}
+
+.target-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.target-column-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.secondary-button,
+.channel-row button {
+  min-height: 34px;
+  border: 1px solid #ccd4e2;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #263248;
+  background: #ffffff;
+}
+
+.target-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.channel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d9dee8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.channel-main {
+  min-width: 0;
+}
+
+.channel-main strong,
+.channel-alias {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-id {
+  display: block;
+  margin-top: 3px;
+  color: #6d7788;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 640px) {
   .topbar {
     gap: 10px;
@@ -119,5 +185,10 @@ a {
   .shell {
     width: min(100vw - 24px, 1120px);
     margin: 20px auto;
+  }
+
+  .channel-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
 }

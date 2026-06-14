@@ -1,11 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
 from ..i18n import translate
 from ..repository import PostAuditRecord, PostDraft, UserBot, UserChannel
 from ..services.web_auth import WebSession
-from .deps import csrf_token, current_session, repos
+from .deps import csrf_token, current_session, repos, require_csrf
 from .routes import _session_locale
 
 api_router = APIRouter(prefix="/api/web")
@@ -117,6 +117,47 @@ def targets_api(
         "stale_default": default is None
         and repo_set.user_post_defaults.has_for_owner(session.user_id),
     }
+
+
+@api_router.post("/targets/channels/{alias}/rename")
+def rename_channel_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    alias: str,
+    new_alias: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, object]:
+    normalized_alias = new_alias.strip()
+    if not normalized_alias:
+        raise HTTPException(status_code=400, detail="Channel alias cannot be empty")
+    repo_set = repos(request)
+    if normalized_alias != alias:
+        try:
+            repo_set.user_channels.get_by_owner_and_alias(session.user_id, normalized_alias)
+        except LookupError:
+            pass
+        else:
+            raise HTTPException(status_code=409, detail="Channel alias already exists")
+    try:
+        channel = repo_set.user_channels.rename_alias(
+            session.user_id,
+            alias,
+            new_alias=normalized_alias,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Channel alias not found") from exc
+    return _channel_payload(channel)
+
+
+@api_router.post("/targets/channels/{alias}/delete")
+def delete_channel_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    alias: str,
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, bool]:
+    repos(request).user_channels.soft_delete(session.user_id, alias)
+    return {"success": True}
 
 
 @api_router.get("/drafts")

@@ -131,6 +131,79 @@ def test_api_targets_reports_stale_default(ctx, web_settings):
     assert payload["stale_default"] is True
 
 
+def test_api_targets_renames_channel_alias(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        "/api/web/targets/channels/town/rename",
+        data={"csrf": csrf, "new_alias": "announcements"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["alias"] == "announcements"
+    assert (
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "announcements").channel_id
+        == "channel-id"
+    )
+
+
+def test_api_targets_rejects_blank_channel_alias_rename(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        "/api/web/targets/channels/town/rename",
+        data={"csrf": csrf, "new_alias": "  "},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Channel alias cannot be empty"}
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "channel-id"
+
+
+def test_api_targets_rejects_duplicate_channel_alias_rename(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="town-id")
+    ctx.user_channels.add(owner_user_id="alice-id", alias="alerts", channel_id="alerts-id")
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        "/api/web/targets/channels/town/rename",
+        data={"csrf": csrf, "new_alias": "alerts"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Channel alias already exists"}
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == "town-id"
+
+
+def test_api_targets_deletes_channel_alias(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        "/api/web/targets/channels/town/delete",
+        data={"csrf": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+    with pytest.raises(LookupError):
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
 def test_api_drafts_returns_drafts(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)

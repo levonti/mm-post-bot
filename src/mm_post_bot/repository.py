@@ -601,6 +601,24 @@ class UserChannelRepo:
             raise LookupError(f"user_channel not found: {owner_user_id}/{alias}")
         return _user_channel_from_row(row)
 
+    def rename_alias(self, owner_user_id: str, alias: str, *, new_alias: str) -> UserChannel:
+        now = _now()
+        row = self._conn.execute(
+            """
+            UPDATE user_channel
+            SET alias = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND alias = %s
+              AND deleted_at IS NULL
+            RETURNING *
+            """,
+            (new_alias, now, owner_user_id, alias),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"user_channel not found: {owner_user_id}/{alias}")
+        return _user_channel_from_row(row)
+
     def get_by_owner_and_alias(self, owner_user_id: str, alias: str) -> UserChannel:
         row = self._conn.execute(
             """
