@@ -83,6 +83,7 @@ def _base_context(
         "error_message": None,
         "success_message": None,
         "t": t,
+        "legacy_prefix": "/legacy",
     }
 
 
@@ -375,7 +376,7 @@ def set_language(
     return RedirectResponse(_safe_next_path(next_path), status_code=303)
 
 
-@router.get("/")
+@router.get("/legacy")
 def home(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
@@ -419,10 +420,10 @@ async def save_draft(
         )
     finally:
         await ctx.manager_mm.aclose()
-    return RedirectResponse("/drafts", status_code=303)
+    return RedirectResponse("/legacy/drafts", status_code=303)
 
 
-@router.get("/drafts")
+@router.get("/legacy/drafts")
 def draft_list(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
@@ -444,7 +445,7 @@ def draft_list(
     )
 
 
-@router.get("/audit")
+@router.get("/legacy/audit")
 def audit(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
@@ -472,7 +473,7 @@ def audit(
     )
 
 
-@router.get("/targets")
+@router.get("/legacy/targets")
 def targets(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
@@ -599,7 +600,10 @@ def add_channel_from_search(
                 "message": message,
             }
         )
-    return RedirectResponse(f"/targets?channel_added={quote(alias, safe='')}", status_code=303)
+    return RedirectResponse(
+        f"/legacy/targets?channel_added={quote(alias, safe='')}",
+        status_code=303,
+    )
 
 
 @router.post("/targets/default")
@@ -629,7 +633,7 @@ def set_default_target(
             context=context,
             status_code=400,
         )
-    return RedirectResponse("/targets", status_code=303)
+    return RedirectResponse("/legacy/targets", status_code=303)
 
 
 @router.post("/targets/default/clear")
@@ -639,10 +643,10 @@ def clear_default_target(
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> Response:
     repos(request).user_post_defaults.clear_for_owner(session.user_id)
-    return RedirectResponse("/targets", status_code=303)
+    return RedirectResponse("/legacy/targets", status_code=303)
 
 
-@router.get("/drafts/{draft_id}")
+@router.get("/legacy/drafts/{draft_id}")
 def draft_detail(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
@@ -696,7 +700,7 @@ async def update_draft(
         ) from exc
     finally:
         await ctx.manager_mm.aclose()
-    return RedirectResponse(f"/drafts/{draft_id}", status_code=303)
+    return RedirectResponse(f"/legacy/drafts/{draft_id}", status_code=303)
 
 
 @router.post("/drafts/{draft_id}/publish")
@@ -737,7 +741,7 @@ async def publish_draft_from_web(
         )
     finally:
         await ctx.manager_mm.aclose()
-    return RedirectResponse(f"/audit?published={draft_id}", status_code=303)
+    return RedirectResponse(f"/legacy/audit?published={draft_id}", status_code=303)
 
 
 @router.post("/drafts/{draft_id}/delete")
@@ -749,4 +753,4 @@ def delete_draft(
 ) -> Response:
     _draft_or_404(request, session, draft_id)
     repos(request).post_drafts.soft_delete(session.user_id, draft_id)
-    return RedirectResponse("/drafts", status_code=303)
+    return RedirectResponse("/legacy/drafts", status_code=303)

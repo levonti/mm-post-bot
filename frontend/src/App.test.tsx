@@ -6,6 +6,7 @@ import { App } from "./App";
 describe("App", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
   });
 
   it("loads bootstrap and renders the composer shell", async () => {
@@ -24,7 +25,33 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("alice")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "mm-post-bot" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Composer" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
+  });
+
+  it("renders root links when opened through the app compatibility path", async () => {
+    window.history.replaceState(null, "", "/app");
+    vi.spyOn(window, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          csrf: "token",
+          locale: "en",
+          nav: [
+            { href: "/", key: "composer", label: "Composer" },
+            { href: "/drafts", key: "drafts", label: "Drafts" }
+          ],
+          session: { user_id: "alice-id", username: "alice" }
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 }
+      )
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("alice")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Composer" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Drafts" })).toHaveAttribute("href", "/drafts");
   });
 
   it("renders mutation errors inline", async () => {

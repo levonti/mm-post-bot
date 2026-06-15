@@ -9,7 +9,13 @@ type DraftSummary = {
   updated_at: string;
 };
 
-export function DraftsPage({ drafts, locale = "en" }: { drafts: DraftSummary[]; locale?: Locale }) {
+export function DraftsPage({
+  drafts,
+  locale = "en"
+}: {
+  drafts: DraftSummary[];
+  locale?: Locale;
+}) {
   const countKey = drafts.length === 1 ? "web.drafts.count_one" : "web.drafts.count_many";
 
   return (
@@ -22,7 +28,7 @@ export function DraftsPage({ drafts, locale = "en" }: { drafts: DraftSummary[]; 
         <div className="empty-state">
           <h3>{t(locale, "web.drafts.empty.title")}</h3>
           <p>{t(locale, "web.drafts.empty.body")}</p>
-          <a href="/app">{t(locale, "web.drafts.empty.action")}</a>
+          <a href="/">{t(locale, "web.drafts.empty.action")}</a>
         </div>
       ) : (
         <ul className="record-list">
@@ -37,7 +43,7 @@ export function DraftsPage({ drafts, locale = "en" }: { drafts: DraftSummary[]; 
                   })}
                 </span>
               </div>
-              <a href={`/app/drafts/${draft.id}`}>
+              <a href={`/drafts/${draft.id}`}>
                 {t(locale, "web.drafts.open_with_id", { draft_id: draft.id })}
               </a>
             </li>

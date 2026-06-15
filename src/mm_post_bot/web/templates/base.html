@@ -9,13 +9,13 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/">mm-post-bot</a>
+      <a class="brand" href="{{ legacy_prefix }}">mm-post-bot</a>
       {% if session %}
         <nav class="primary-nav" aria-label="{{ t('web.nav.primary') }}">
-          <a class="{% if active_page == 'composer' %}active{% endif %}" href="/">{{ t("web.nav.composer") }}</a>
-          <a class="{% if active_page == 'drafts' %}active{% endif %}" href="/drafts">{{ t("web.nav.drafts") }}</a>
-          <a class="{% if active_page == 'targets' %}active{% endif %}" href="/targets">{{ t("web.nav.targets") }}</a>
-          <a class="{% if active_page == 'audit' %}active{% endif %}" href="/audit">{{ t("web.nav.audit") }}</a>
+          <a class="{% if active_page == 'composer' %}active{% endif %}" href="{{ legacy_prefix }}">{{ t("web.nav.composer") }}</a>
+          <a class="{% if active_page == 'drafts' %}active{% endif %}" href="{{ legacy_prefix }}/drafts">{{ t("web.nav.drafts") }}</a>
+          <a class="{% if active_page == 'targets' %}active{% endif %}" href="{{ legacy_prefix }}/targets">{{ t("web.nav.targets") }}</a>
+          <a class="{% if active_page == 'audit' %}active{% endif %}" href="{{ legacy_prefix }}/audit">{{ t("web.nav.audit") }}</a>
         </nav>
         <div class="topbar-actions">
           <form class="language-toggle" action="/language" method="post" aria-label="{{ t('web.language.label') }}">

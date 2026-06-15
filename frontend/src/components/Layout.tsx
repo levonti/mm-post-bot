@@ -7,6 +7,7 @@ type LayoutProps = {
   children: ReactNode;
   locale: Locale;
   nav: NavItem[];
+  homeHref?: string;
   onLocaleChange?: (locale: Locale) => void | Promise<void>;
   username: string;
 };
@@ -14,6 +15,7 @@ type LayoutProps = {
 export function Layout({
   activePage,
   children,
+  homeHref = "/",
   locale,
   nav,
   onLocaleChange,
@@ -22,7 +24,7 @@ export function Layout({
   return (
     <>
       <header className="topbar">
-        <a className="brand" href="/">
+        <a className="brand" href={homeHref}>
           mm-post-bot
         </a>
         <nav

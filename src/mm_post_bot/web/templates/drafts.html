@@ -34,7 +34,7 @@
               <td data-label="{{ t('web.drafts.table.id') }}">#{{ draft.id }}</td>
               <td class="preview-cell" data-label="{{ t('web.drafts.table.preview') }}">{{ draft.message.splitlines()[0] if draft.message.splitlines() else draft.message }}</td>
               <td data-label="{{ t('web.drafts.table.created') }}">{{ draft.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-              <td data-label="{{ t('web.drafts.table.action') }}"><a class="text-action" href="/drafts/{{ draft.id }}">{{ t("web.drafts.open") }}</a></td>
+              <td data-label="{{ t('web.drafts.table.action') }}"><a class="text-action" href="{{ legacy_prefix }}/drafts/{{ draft.id }}">{{ t("web.drafts.open") }}</a></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -44,7 +44,7 @@
     <section class="empty-state">
       <h2>{{ t("web.drafts.empty.title") }}</h2>
       <p>{{ t("web.drafts.empty.body") }}</p>
-      <a class="button-link" href="/">{{ t("web.drafts.empty.action") }}</a>
+      <a class="button-link" href="{{ legacy_prefix }}">{{ t("web.drafts.empty.action") }}</a>
     </section>
   {% endif %}
 {% endblock %}

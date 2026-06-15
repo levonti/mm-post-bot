@@ -18,7 +18,7 @@
       <label for="message">{{ t("web.composer.message") }}</label>
       <textarea id="message" name="message" rows="14">{{ draft.message }}</textarea>
       <div class="form-actions split-actions">
-        <a class="secondary-link" href="/drafts">{{ t("web.draft_detail.back") }}</a>
+        <a class="secondary-link" href="{{ legacy_prefix }}/drafts">{{ t("web.draft_detail.back") }}</a>
         <button type="submit">{{ t("web.draft_detail.save") }}</button>
       </div>
     </form>

@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from datetime import UTC, datetime
 from typing import ClassVar
 
@@ -51,6 +53,17 @@ def _csrf_from(response_text: str) -> str:
     start = response_text.index(marker) + len(marker)
     end = response_text.index('"', start)
     return response_text[start:end]
+
+
+def _spa_web_dir(tmp_path):
+    spa_assets = tmp_path / "static" / "spa" / "assets"
+    spa_assets.mkdir(parents=True)
+    (tmp_path / "static" / "spa" / "index.html").write_text(
+        '<div id="root"></div><script src="/assets/preview.js"></script>',
+        encoding="utf-8",
+    )
+    (spa_assets / "preview.js").write_text("console.log('preview');", encoding="utf-8")
+    return tmp_path
 
 
 def _ready_target(ctx):
@@ -118,6 +131,17 @@ def test_login_requires_valid_token(ctx, web_settings):
     assert "Login link is invalid or expired" in response.text
 
 
+def test_web_entrypoint_imports_without_command_cycle():
+    result = subprocess.run(
+        [sys.executable, "-c", "import mm_post_bot.web.__main__"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_login_sets_session_cookie_and_redirects(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
@@ -137,18 +161,33 @@ def test_home_requires_session(ctx, web_settings):
     assert response.headers["location"] == "/login-required"
 
 
-def test_home_renders_workspace_after_login(ctx, web_settings):
-    app = create_app(settings=web_settings, conn=ctx.conn)
+def test_home_serves_react_app_after_migration(ctx, web_settings, tmp_path):
+    app = create_app(settings=web_settings, conn=ctx.conn, web_dir=_spa_web_dir(tmp_path))
     client = TestClient(app)
     _login(client, ctx)
 
     response = client.get("/")
 
     assert response.status_code == 200
+    assert '<div id="root"></div>' in response.text
+
+
+def test_legacy_home_renders_workspace_after_login(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+
+    response = client.get("/legacy")
+
+    assert response.status_code == 200
     assert "Composer" in response.text
     assert "Drafts" in response.text
     assert "Targets" in response.text
     assert "Audit" in response.text
+    assert '<a class="brand" href="/legacy">' in response.text
+    assert 'href="/legacy/drafts"' in response.text
+    assert 'href="/legacy/targets"' in response.text
+    assert 'href="/legacy/audit"' in response.text
 
 
 def test_web_uses_stored_russian_locale(ctx, web_settings):
@@ -190,11 +229,11 @@ def test_web_uses_stored_russian_locale(ctx, web_settings):
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
     draft = ctx.post_drafts.list_for_owner("alice-id")[0]
 
-    home = client.get("/")
-    drafts = client.get("/drafts")
-    targets = client.get("/targets")
-    audit = client.get("/audit")
-    detail = client.get(f"/drafts/{draft.id}")
+    home = client.get("/legacy")
+    drafts = client.get("/legacy/drafts")
+    targets = client.get("/legacy/targets")
+    audit = client.get("/legacy/audit")
+    detail = client.get(f"/legacy/drafts/{draft.id}")
 
     assert home.status_code == 200
     assert '<html lang="ru">' in home.text
@@ -236,7 +275,7 @@ def test_language_switcher_updates_shared_preference(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    home = client.get("/")
+    home = client.get("/legacy")
     csrf = _csrf_from(home.text)
 
     assert 'class="language-toggle"' in home.text
@@ -244,14 +283,14 @@ def test_language_switcher_updates_shared_preference(ctx, web_settings):
 
     response = client.post(
         "/language",
-        data={"csrf": csrf, "locale": "ru", "next": "/targets"},
+        data={"csrf": csrf, "locale": "ru", "next": "/legacy/targets"},
         follow_redirects=False,
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/targets"
+    assert response.headers["location"] == "/legacy/targets"
     assert ctx.user_preferences.get_locale("alice-id") == "ru"
-    targets = client.get("/targets")
+    targets = client.get("/legacy/targets")
     assert "Цели публикации" in targets.text
 
 
@@ -259,7 +298,7 @@ def test_language_switcher_rejects_unknown_locale(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/").text)
+    csrf = _csrf_from(client.get("/legacy").text)
 
     response = client.post(
         "/language",
@@ -276,7 +315,7 @@ def test_language_switcher_sanitizes_unsafe_next(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/").text)
+    csrf = _csrf_from(client.get("/legacy").text)
 
     response = client.post(
         "/language",
@@ -295,23 +334,23 @@ def test_composer_shows_ready_default_target(ctx, web_settings):
     _login(client, ctx)
     _ready_target(ctx)
 
-    response = client.get("/")
+    response = client.get("/legacy")
 
     assert response.status_code == 200
     assert "Default target" in response.text
     assert "Ready to publish" in response.text
     assert "news" in response.text
     assert "town" in response.text
-    assert '<a class="meta-link" href="/drafts">' in response.text
-    assert '<a class="meta-link" href="/targets">' in response.text
-    assert '<a class="meta-link" href="/audit">' in response.text
+    assert '<a class="meta-link" href="/legacy/drafts">' in response.text
+    assert '<a class="meta-link" href="/legacy/targets">' in response.text
+    assert '<a class="meta-link" href="/legacy/audit">' in response.text
 
 
 def test_composer_saves_draft(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/").text)
+    csrf = _csrf_from(client.get("/legacy").text)
 
     response = client.post(
         "/drafts",
@@ -320,7 +359,7 @@ def test_composer_saves_draft(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/drafts"
+    assert response.headers["location"] == "/legacy/drafts"
     drafts = ctx.post_drafts.list_for_owner("alice-id")
     assert drafts[0].message == "Web draft"
 
@@ -329,7 +368,7 @@ def test_composer_rejects_empty_draft(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/").text)
+    csrf = _csrf_from(client.get("/legacy").text)
 
     response = client.post(
         "/drafts",
@@ -355,12 +394,13 @@ def test_drafts_page_lists_saved_drafts(ctx, web_settings):
         message_sha256="hash",
     )
 
-    response = client.get("/drafts")
+    response = client.get("/legacy/drafts")
 
     assert response.status_code == 200
     assert "Queued web post" in response.text
     assert 'data-label="Preview"' in response.text
     assert 'data-label="Created"' in response.text
+    assert 'href="/legacy/drafts/' in response.text
     assert "Open" in response.text
 
 
@@ -373,7 +413,7 @@ def test_draft_detail_updates_message(ctx, web_settings):
         message="Old web draft",
         message_sha256="old",
     )
-    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+    csrf = _csrf_from(client.get(f"/legacy/drafts/{draft.id}").text)
 
     response = client.post(
         f"/drafts/{draft.id}",
@@ -382,7 +422,7 @@ def test_draft_detail_updates_message(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/drafts/{draft.id}"
+    assert response.headers["location"] == f"/legacy/drafts/{draft.id}"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).message == "Updated web draft"
 
 
@@ -397,11 +437,12 @@ def test_draft_detail_uses_target_selects(ctx, web_settings):
         message_sha256="hash",
     )
 
-    response = client.get(f"/drafts/{draft.id}")
+    response = client.get(f"/legacy/drafts/{draft.id}")
 
     assert response.status_code == 200
     assert "Default target" in response.text
     assert "news -&gt; town" in response.text
+    assert 'href="/legacy/drafts"' in response.text
     assert '<select id="bot_alias" name="bot_alias">' in response.text
     assert '<select id="channel_alias" name="channel_alias">' in response.text
     assert '<option value="">Use default' in response.text
@@ -422,7 +463,7 @@ def test_russian_draft_detail_uses_compact_default_options(ctx, web_settings):
         message_sha256="hash",
     )
 
-    response = client.get(f"/drafts/{draft.id}")
+    response = client.get(f"/legacy/drafts/{draft.id}")
 
     assert response.status_code == 200
     assert "По умолчанию: news" in response.text
@@ -440,7 +481,7 @@ def test_draft_detail_rejects_empty_update(ctx, web_settings):
         message="Old web draft",
         message_sha256="old",
     )
-    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+    csrf = _csrf_from(client.get(f"/legacy/drafts/{draft.id}").text)
 
     response = client.post(
         f"/drafts/{draft.id}",
@@ -467,7 +508,7 @@ def test_draft_delete_marks_draft_deleted(ctx, web_settings):
         message="Delete web draft",
         message_sha256="hash",
     )
-    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+    csrf = _csrf_from(client.get(f"/legacy/drafts/{draft.id}").text)
 
     response = client.post(
         f"/drafts/{draft.id}/delete",
@@ -476,7 +517,7 @@ def test_draft_delete_marks_draft_deleted(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/drafts"
+    assert response.headers["location"] == "/legacy/drafts"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "deleted"
 
 
@@ -490,7 +531,7 @@ def test_publish_draft_from_web(ctx, web_settings):
         message="Publish from web",
         message_sha256=hash_message("Publish from web"),
     )
-    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+    csrf = _csrf_from(client.get(f"/legacy/drafts/{draft.id}").text)
 
     response = client.post(
         f"/drafts/{draft.id}/publish",
@@ -499,7 +540,7 @@ def test_publish_draft_from_web(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/audit?published={draft.id}"
+    assert response.headers["location"] == f"/legacy/audit?published={draft.id}"
     assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "sent"
     assert ctx.created_posts[0]["message"] == "Publish from web"
 
@@ -514,7 +555,7 @@ def test_publish_success_shows_audit_banner(ctx, web_settings):
         message="Publish with banner",
         message_sha256=hash_message("Publish with banner"),
     )
-    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+    csrf = _csrf_from(client.get(f"/legacy/drafts/{draft.id}").text)
 
     response = client.post(
         f"/drafts/{draft.id}/publish",
@@ -523,7 +564,7 @@ def test_publish_success_shows_audit_banner(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/audit?published={draft.id}"
+    assert response.headers["location"] == f"/legacy/audit?published={draft.id}"
     audit = client.get(response.headers["location"])
     assert audit.status_code == 200
     assert f"Draft #{draft.id} published." in audit.text
@@ -541,7 +582,7 @@ def test_publish_error_renders_inline_banner(ctx, web_settings):
         message="Publish failure stays editable",
         message_sha256=hash_message("Publish failure stays editable"),
     )
-    csrf = _csrf_from(client.get(f"/drafts/{draft.id}").text)
+    csrf = _csrf_from(client.get(f"/legacy/drafts/{draft.id}").text)
 
     response = client.post(
         f"/drafts/{draft.id}/publish",
@@ -579,7 +620,7 @@ def test_audit_page_lists_records(ctx, web_settings):
         error_message=None,
     )
 
-    response = client.get("/audit")
+    response = client.get("/legacy/audit")
 
     assert response.status_code == 200
     assert "news-bot" in response.text
@@ -603,7 +644,7 @@ def test_targets_page_lists_aliases_and_default(ctx, web_settings):
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
     ctx.user_post_defaults.set_for_owner("alice-id", bot_alias="news", channel_alias="town")
 
-    response = client.get("/targets")
+    response = client.get("/legacy/targets")
 
     assert response.status_code == 200
     assert "news-bot" in response.text
@@ -621,7 +662,7 @@ def test_targets_ignores_legacy_channel_query(ctx, web_settings, monkeypatch):
     client = TestClient(app)
     _login(client, ctx)
 
-    response = client.get("/targets?channel_query=town")
+    response = client.get("/legacy/targets?channel_query=town")
 
     assert response.status_code == 200
     assert "Town Square" not in response.text
@@ -656,7 +697,7 @@ def test_add_channel_from_search_result(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
 
     response = client.post(
         "/targets/channels",
@@ -670,7 +711,7 @@ def test_add_channel_from_search_result(ctx, web_settings):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/targets?channel_added=town"
+    assert response.headers["location"] == "/legacy/targets?channel_added=town"
     saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
     assert saved.channel_id == "town-channel-id"
 
@@ -679,7 +720,7 @@ def test_add_channel_from_search_result_returns_json(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
 
     response = client.post(
         "/targets/channels",
@@ -709,7 +750,7 @@ def test_add_channel_from_search_rejects_duplicate_alias(ctx, web_settings):
     client = TestClient(app)
     _login(client, ctx)
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="existing-id")
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
 
     response = client.post(
         "/targets/channels",
@@ -734,7 +775,7 @@ def test_add_channel_from_search_rejects_duplicate_alias_json(ctx, web_settings)
     client = TestClient(app)
     _login(client, ctx)
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="existing-id")
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
 
     response = client.post(
         "/targets/channels",
@@ -767,7 +808,7 @@ def test_set_and_clear_default_from_targets(ctx, web_settings):
         token_fingerprint="fp",
     )
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
 
     response = client.post(
         "/targets/default",
@@ -778,7 +819,7 @@ def test_set_and_clear_default_from_targets(ctx, web_settings):
     assert response.status_code == 303
     assert ctx.user_post_defaults.get_for_owner("alice-id").bot.alias == "news"
 
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
     response = client.post(
         "/targets/default/clear",
         data={"csrf": csrf},
@@ -793,7 +834,7 @@ def test_set_default_rejects_invalid_aliases(ctx, web_settings):
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
-    csrf = _csrf_from(client.get("/targets").text)
+    csrf = _csrf_from(client.get("/legacy/targets").text)
 
     response = client.post(
         "/targets/default",
@@ -808,26 +849,24 @@ def test_set_default_rejects_invalid_aliases(ctx, web_settings):
     assert ctx.user_post_defaults.get_for_owner("alice-id") is None
 
 
-def test_react_preview_route_serves_spa_shell(ctx, web_settings, tmp_path):
-    spa_assets = tmp_path / "static" / "spa" / "assets"
-    spa_assets.mkdir(parents=True)
-    (tmp_path / "static" / "spa" / "index.html").write_text(
-        '<div id="root"></div><script src="/app/assets/preview.js"></script>',
-        encoding="utf-8",
-    )
-    (spa_assets / "preview.js").write_text("console.log('preview');", encoding="utf-8")
-    app = create_app(settings=web_settings, conn=ctx.conn, web_dir=tmp_path)
+def test_react_routes_serve_spa_shell(ctx, web_settings, tmp_path):
+    app = create_app(settings=web_settings, conn=ctx.conn, web_dir=_spa_web_dir(tmp_path))
     client = TestClient(app)
+    _login(client, ctx)
 
-    response = client.get("/app")
+    response = client.get("/")
 
     assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
 
-    response = client.get("/app/drafts/123")
-    assert response.status_code == 200
-    assert '<div id="root"></div>' in response.text
+    for path in ("/drafts/123", "/targets", "/audit", "/app/drafts/123"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert '<div id="root"></div>' in response.text
 
-    asset_response = client.get("/app/assets/preview.js")
+    asset_response = client.get("/assets/preview.js")
     assert asset_response.status_code == 200
     assert "console.log('preview');" in asset_response.text
+
+    preview_asset_response = client.get("/app/assets/preview.js")
+    assert preview_asset_response.status_code == 200

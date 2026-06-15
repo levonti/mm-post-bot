@@ -125,12 +125,13 @@ export function App() {
   const activeBootstrap = bootstrap;
   const nav = activeBootstrap.nav.map((item) => ({
     ...item,
-    href: item.href === "/" ? "/app" : `/app${item.href}`
+    href: item.href
   }));
 
   return (
     <Layout
       activePage={activePage}
+      homeHref="/"
       locale={activeBootstrap.locale}
       nav={nav}
       onLocaleChange={changeLanguage}
@@ -181,7 +182,7 @@ export function App() {
       form.set("csrf", activeBootstrap.csrf);
       form.set("message", message);
       const result = await apiForm<{ id: number }>("/api/web/drafts", form);
-      window.location.href = `/app/drafts/${result.id}`;
+      window.location.href = `/drafts/${result.id}`;
     });
   }
 
@@ -204,7 +205,7 @@ export function App() {
         `/api/web/drafts/${draftId}/publish`,
         form
       );
-      window.location.href = toAppPath(result.redirect);
+      window.location.href = result.redirect;
     });
   }
 
@@ -213,7 +214,7 @@ export function App() {
       const form = new FormData();
       form.set("csrf", activeBootstrap.csrf);
       await apiForm(`/api/web/drafts/${draftId}/delete`, form);
-      window.location.href = "/app/drafts";
+      window.location.href = "/drafts";
     });
   }
 
@@ -234,9 +235,5 @@ export function App() {
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : "Request failed");
     }
-  }
-
-  function toAppPath(redirect: string) {
-    return redirect.startsWith("/") ? `/app${redirect}` : redirect;
   }
 }

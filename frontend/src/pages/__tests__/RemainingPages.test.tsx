@@ -35,7 +35,7 @@ describe("remaining React pages", () => {
 
     expect(screen.getByRole("link", { name: "Open draft 7" })).toHaveAttribute(
       "href",
-      "/app/drafts/7"
+      "/drafts/7"
     );
     expect(screen.getByText("Draft body")).toBeInTheDocument();
   });

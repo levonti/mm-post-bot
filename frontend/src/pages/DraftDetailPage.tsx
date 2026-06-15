@@ -120,7 +120,7 @@ export function DraftDetailPage({
             value={message}
           />
           <div className="button-row">
-            <a className="secondary-link" href="/app/drafts">
+            <a className="secondary-link" href="/drafts">
               {t(locale, "web.draft_detail.back")}
             </a>
             <button type="submit">{t(locale, "web.draft_detail.save")}</button>
