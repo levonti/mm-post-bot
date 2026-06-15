@@ -1,11 +1,62 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 describe("App", () => {
-  it("renders the React preview shell", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("loads bootstrap and renders the composer shell", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          csrf: "token",
+          locale: "en",
+          nav: [{ href: "/", key: "composer", label: "Composer" }],
+          session: { user_id: "alice-id", username: "alice" }
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 }
+      )
+    );
+
     render(<App />);
 
-    expect(screen.getByText("mm-post-bot React preview")).toBeInTheDocument();
+    expect(await screen.findByText("alice")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
+  });
+
+  it("renders mutation errors inline", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/web/bootstrap") {
+        return new Response(
+          JSON.stringify({
+            csrf: "token",
+            locale: "en",
+            nav: [{ href: "/", key: "composer", label: "Composer" }],
+            session: { user_id: "alice-id", username: "alice" }
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 200 }
+        );
+      }
+      if (String(input) === "/api/web/drafts" && init?.method === "POST") {
+        return new Response(JSON.stringify({ detail: "Draft message cannot be empty" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 400
+        });
+      }
+      throw new Error(`Unexpected request ${String(input)}`);
+    });
+
+    render(<App />);
+
+    await screen.findByText("alice");
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Draft message cannot be empty"
+    );
   });
 });

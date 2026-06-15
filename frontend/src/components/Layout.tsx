@@ -1,15 +1,24 @@
 import type { ReactNode } from "react";
 import type { Locale, NavItem } from "../api/types";
+import { t } from "../i18n";
 
 type LayoutProps = {
   activePage: string;
   children: ReactNode;
   locale: Locale;
   nav: NavItem[];
+  onLocaleChange?: (locale: Locale) => void | Promise<void>;
   username: string;
 };
 
-export function Layout({ activePage, children, locale, nav, username }: LayoutProps) {
+export function Layout({
+  activePage,
+  children,
+  locale,
+  nav,
+  onLocaleChange,
+  username
+}: LayoutProps) {
   return (
     <>
       <header className="topbar">
@@ -32,6 +41,27 @@ export function Layout({ activePage, children, locale, nav, username }: LayoutPr
           ))}
         </nav>
         <div className="topbar-actions">
+          <div
+            aria-label={t(locale, "web.language.label")}
+            className="locale-switch"
+            role="group"
+          >
+            <button
+              aria-pressed={locale === "en"}
+              onClick={() => onLocaleChange?.("en")}
+              type="button"
+            >
+              EN
+            </button>
+            <button
+              aria-label="Русский"
+              aria-pressed={locale === "ru"}
+              onClick={() => onLocaleChange?.("ru")}
+              type="button"
+            >
+              RU
+            </button>
+          </div>
           <div className="user-chip">{username}</div>
         </div>
       </header>

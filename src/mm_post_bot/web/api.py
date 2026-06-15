@@ -1,12 +1,22 @@
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from ..i18n import translate
-from ..repository import PostAuditRecord, PostDraft, UserBot, UserChannel
+from ..db import DbConn
+from ..i18n import normalize_locale, translate
+from ..repository import PostAuditRecord, PostDraft, UserBot, UserChannel, UserPreferenceRepo
+from ..services.posting import (
+    DraftMessageEmpty,
+    PublishDraftRequest,
+    PublishError,
+    TargetRequest,
+    create_draft,
+    publish_draft,
+    update_draft_message,
+)
 from ..services.web_auth import WebSession
 from .deps import csrf_token, current_session, repos, require_csrf
-from .routes import _session_locale
+from .routes import _command_context, _optional_alias, _session_locale, _web_error
 
 api_router = APIRouter(prefix="/api/web")
 
@@ -94,16 +104,10 @@ def _audit_payload(record: PostAuditRecord) -> dict[str, object]:
     }
 
 
-@api_router.get("/targets")
-def targets_api(
-    request: Request,
-    session: Annotated[WebSession, Depends(current_session)],
-    csrf: Annotated[str, Depends(csrf_token)],
-) -> dict[str, object]:
+def _targets_payload(request: Request, session: WebSession) -> dict[str, object]:
     repo_set = repos(request)
     default = repo_set.user_post_defaults.get_for_owner(session.user_id)
     return {
-        "csrf": csrf,
         "bots": [_bot_payload(bot) for bot in repo_set.user_bots.list_for_owner(session.user_id)],
         "channels": [
             _channel_payload(channel)
@@ -119,6 +123,50 @@ def targets_api(
     }
 
 
+@api_router.get("/targets")
+def targets_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    csrf: Annotated[str, Depends(csrf_token)],
+) -> dict[str, object]:
+    return {
+        "csrf": csrf,
+        **_targets_payload(request, session),
+    }
+
+
+@api_router.post("/targets/default")
+def set_default_target_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    bot_alias: Annotated[str, Form(...)],
+    channel_alias: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, bool]:
+    try:
+        repos(request).user_post_defaults.set_for_owner(
+            session.user_id,
+            bot_alias=bot_alias,
+            channel_alias=channel_alias,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "target_aliases_invalid"),
+        ) from exc
+    return {"success": True}
+
+
+@api_router.post("/targets/default/clear")
+def clear_default_target_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, bool]:
+    repos(request).user_post_defaults.clear_for_owner(session.user_id)
+    return {"success": True}
+
+
 @api_router.post("/targets/channels/{alias}/rename")
 def rename_channel_api(
     request: Request,
@@ -129,7 +177,10 @@ def rename_channel_api(
 ) -> dict[str, object]:
     normalized_alias = new_alias.strip()
     if not normalized_alias:
-        raise HTTPException(status_code=400, detail="Channel alias cannot be empty")
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "channel_add_invalid"),
+        )
     repo_set = repos(request)
     if normalized_alias != alias:
         try:
@@ -137,7 +188,10 @@ def rename_channel_api(
         except LookupError:
             pass
         else:
-            raise HTTPException(status_code=409, detail="Channel alias already exists")
+            raise HTTPException(
+                status_code=409,
+                detail=_web_error(request, session, "channel_alias_duplicate"),
+            )
     try:
         channel = repo_set.user_channels.rename_alias(
             session.user_id,
@@ -145,7 +199,10 @@ def rename_channel_api(
             new_alias=normalized_alias,
         )
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail="Channel alias not found") from exc
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "channel_not_found"),
+        ) from exc
     return _channel_payload(channel)
 
 
@@ -158,6 +215,26 @@ def delete_channel_api(
 ) -> dict[str, bool]:
     repos(request).user_channels.soft_delete(session.user_id, alias)
     return {"success": True}
+
+
+@api_router.post("/drafts")
+async def create_draft_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    message: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, int]:
+    ctx = _command_context(request, session)
+    try:
+        draft = create_draft(ctx, message)
+    except DraftMessageEmpty as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "draft_empty"),
+        ) from exc
+    finally:
+        await ctx.manager_mm.aclose()
+    return {"id": draft.id}
 
 
 @api_router.get("/drafts")
@@ -175,6 +252,103 @@ def drafts_api(
     }
 
 
+@api_router.post("/drafts/{draft_id}")
+async def update_draft_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    message: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, int]:
+    ctx = _command_context(request, session)
+    try:
+        update_draft_message(ctx, draft_id, message)
+    except DraftMessageEmpty as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "draft_empty"),
+        ) from exc
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "draft_not_found"),
+        ) from exc
+    finally:
+        await ctx.manager_mm.aclose()
+    return {"id": draft_id}
+
+
+@api_router.get("/drafts/{draft_id}")
+def draft_detail_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    csrf: Annotated[str, Depends(csrf_token)],
+    draft_id: int,
+) -> dict[str, object]:
+    try:
+        draft = repos(request).post_drafts.get_for_owner(session.user_id, draft_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "draft_not_found"),
+        ) from exc
+    if draft.status != "draft":
+        raise HTTPException(status_code=404, detail=_web_error(request, session, "draft_not_found"))
+    return {"csrf": csrf, "draft": _draft_payload(draft), **_targets_payload(request, session)}
+
+
+@api_router.post("/drafts/{draft_id}/publish")
+async def publish_draft_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    _csrf: Annotated[None, Depends(require_csrf)],
+    bot_alias: Annotated[str, Form()] = "",
+    channel_alias: Annotated[str, Form()] = "",
+) -> dict[str, object]:
+    ctx = _command_context(request, session)
+    try:
+        result = await publish_draft(
+            ctx,
+            PublishDraftRequest(
+                draft_id=draft_id,
+                target=TargetRequest(
+                    bot_alias=_optional_alias(bot_alias),
+                    channel_alias=_optional_alias(channel_alias),
+                ),
+            ),
+        )
+    except PublishError as exc:
+        raise HTTPException(status_code=400, detail=_web_error(request, session, exc.code)) from exc
+    finally:
+        await ctx.manager_mm.aclose()
+    return {
+        "draft_id": result.draft_id,
+        "mattermost_post_id": result.mattermost_post_id,
+        "redirect": f"/audit?published={result.draft_id}",
+    }
+
+
+@api_router.post("/drafts/{draft_id}/delete")
+def delete_draft_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, bool]:
+    try:
+        draft = repos(request).post_drafts.get_for_owner(session.user_id, draft_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "draft_not_found"),
+        ) from exc
+    if draft.status != "draft":
+        raise HTTPException(status_code=404, detail=_web_error(request, session, "draft_not_found"))
+    repos(request).post_drafts.soft_delete(session.user_id, draft_id)
+    return {"success": True}
+
+
 @api_router.get("/audit")
 def audit_api(
     request: Request,
@@ -188,3 +362,21 @@ def audit_api(
             for record in repos(request).audits.list_for_user(session.user_id, limit=50)
         ],
     }
+
+
+@api_router.post("/language")
+def set_language_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    locale: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, str]:
+    normalized = normalize_locale(locale)
+    if normalized is None:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "unsupported_language"),
+        )
+    conn = cast(DbConn, request.app.state.conn)
+    UserPreferenceRepo(conn).set_locale(session.user_id, normalized)
+    return {"locale": normalized}

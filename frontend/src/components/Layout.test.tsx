@@ -1,5 +1,7 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { vi } from "vitest";
 import { Layout } from "./Layout";
 
 describe("Layout", () => {
@@ -26,5 +28,25 @@ describe("Layout", () => {
     );
     expect(screen.getByText("alice")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Targets body" })).toBeInTheDocument();
+  });
+
+  it("switches language from the topbar", async () => {
+    const user = userEvent.setup();
+    const onLocaleChange = vi.fn();
+    render(
+      <Layout
+        activePage="composer"
+        locale="en"
+        nav={[{ href: "/", key: "composer", label: "Composer" }]}
+        onLocaleChange={onLocaleChange}
+        username="alice"
+      >
+        <h1>Composer body</h1>
+      </Layout>
+    );
+
+    await user.click(screen.getByRole("button", { name: "Русский" }));
+
+    expect(onLocaleChange).toHaveBeenCalledWith("ru");
   });
 });
