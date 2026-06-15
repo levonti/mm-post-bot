@@ -155,6 +155,115 @@ a {
   background: #ffffff;
 }
 
+.channel-search-panel {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 16px;
+  padding: 14px;
+  border: 1px solid #d9dee8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.default-target-panel {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 16px;
+  padding: 14px;
+  border: 1px solid #d9dee8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.default-target-panel h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.default-target-form {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(160px, 1fr) minmax(120px, auto) minmax(160px, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.default-target-form label {
+  color: #4f5b70;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.default-target-form select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #ccd4e2;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #172033;
+  font: inherit;
+  background: #ffffff;
+}
+
+.default-target-form .button-row {
+  grid-column: 1 / -1;
+}
+
+.channel-search-panel label,
+.channel-edit-form label {
+  color: #4f5b70;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.channel-search-panel input,
+.channel-edit-form input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #ccd4e2;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #172033;
+  font: inherit;
+  background: #ffffff;
+}
+
+.channel-result-list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.channel-result-button {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #ccd4e2;
+  border-radius: 6px;
+  padding: 0 10px;
+  text-align: left;
+  color: #263248;
+  background: #ffffff;
+}
+
+.channel-result-button:hover,
+.channel-result-button:focus-visible {
+  border-color: #8795aa;
+  background: #f1f4f8;
+}
+
+.channel-add-form,
+.channel-edit-form {
+  display: grid;
+  gap: 8px;
+}
+
+.channel-edit-form {
+  grid-column: span 3;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
 .target-list {
   display: grid;
   gap: 8px;
@@ -419,6 +528,15 @@ th {
   .channel-row {
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
+  }
+
+  .channel-edit-form {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .default-target-form {
+    grid-template-columns: 1fr;
   }
 
   .panel-heading-row,

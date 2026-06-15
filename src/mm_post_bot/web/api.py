@@ -1,9 +1,10 @@
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 
 from ..db import DbConn
 from ..i18n import normalize_locale, translate
+from ..mm_client import MattermostClient, MattermostError
 from ..repository import PostAuditRecord, PostDraft, UserBot, UserChannel, UserPreferenceRepo
 from ..services.posting import (
     DraftMessageEmpty,
@@ -15,7 +16,7 @@ from ..services.posting import (
     update_draft_message,
 )
 from ..services.web_auth import WebSession
-from .deps import csrf_token, current_session, repos, require_csrf
+from .deps import csrf_token, current_session, repos, require_csrf, settings
 from .routes import _command_context, _optional_alias, _session_locale, _web_error
 
 api_router = APIRouter(prefix="/api/web")
@@ -123,6 +124,50 @@ def _targets_payload(request: Request, session: WebSession) -> dict[str, object]
     }
 
 
+def _channel_search_label(team_name: str, channel_name: str, display_name: str) -> str:
+    location = "/".join(part for part in (team_name, channel_name) if part)
+    if location and display_name != channel_name:
+        return f"{display_name} ({location})"
+    return location or display_name
+
+
+async def _search_mattermost_channels(request: Request, term: str) -> list[dict[str, str]]:
+    cfg = settings(request)
+    client = MattermostClient(
+        cfg.mm_rest_base,
+        cfg.mm_bot_token,
+        verify_ssl=cfg.mm_verify_ssl,
+    )
+    results: list[dict[str, str]] = []
+    seen_channel_ids: set[str] = set()
+    try:
+        teams = await client.get_my_teams()
+        for team in teams:
+            team_id = str(team.get("id") or "")
+            team_name = str(team.get("name") or team.get("display_name") or "")
+            if not team_id:
+                continue
+            for channel in await client.search_channels(team_id, term):
+                channel_id = str(channel.get("id") or "")
+                if not channel_id or channel_id in seen_channel_ids:
+                    continue
+                channel_name = str(channel.get("name") or "")
+                display_name = str(channel.get("display_name") or channel_name or channel_id)
+                results.append(
+                    {
+                        "id": channel_id,
+                        "name": channel_name,
+                        "display_name": display_name,
+                        "team_name": team_name,
+                        "label": _channel_search_label(team_name, channel_name, display_name),
+                    }
+                )
+                seen_channel_ids.add(channel_id)
+    finally:
+        await client.aclose()
+    return results
+
+
 @api_router.get("/targets")
 def targets_api(
     request: Request,
@@ -132,6 +177,69 @@ def targets_api(
     return {
         "csrf": csrf,
         **_targets_payload(request, session),
+    }
+
+
+@api_router.get("/targets/channels/search")
+async def search_channels_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    q: Annotated[str, Query()] = "",
+) -> dict[str, object]:
+    query = q.strip()
+    if len(query) < 2:
+        return {"results": []}
+    try:
+        return {"results": await _search_mattermost_channels(request, query)}
+    except MattermostError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=_web_error(request, session, "channel_search_failed"),
+        ) from exc
+
+
+@api_router.post("/targets/channels")
+def add_channel_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    channel_alias: Annotated[str, Form(...)],
+    channel_id: Annotated[str, Form(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    channel_label: Annotated[str, Form()] = "",
+) -> dict[str, object]:
+    alias = channel_alias.strip()
+    selected_channel_id = channel_id.strip()
+    if not alias or not selected_channel_id:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "channel_add_invalid"),
+        )
+
+    repo_set = repos(request)
+    try:
+        repo_set.user_channels.get_by_owner_and_alias(session.user_id, alias)
+    except LookupError:
+        pass
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "channel_alias_duplicate"),
+        )
+
+    repo_set.user_channels.add(
+        owner_user_id=session.user_id,
+        alias=alias,
+        channel_id=selected_channel_id,
+    )
+    return {
+        "success": True,
+        "alias": alias,
+        "channel_id": selected_channel_id,
+        "message": translate(
+            _session_locale(request, session),
+            "web.targets.channel_added_banner",
+            alias=alias,
+        ),
     }
 
 

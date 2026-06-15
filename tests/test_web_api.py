@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,10 +10,52 @@ from test_commands import pg_conn as _commands_pg_conn
 from mm_post_bot.config import Settings
 from mm_post_bot.security import encrypt_token
 from mm_post_bot.services.web_auth import create_login_token, hash_login_token
+from mm_post_bot.web import api as web_api
 from mm_post_bot.web.app import create_app
 
 ctx = _commands_ctx
 pg_conn = _commands_pg_conn
+
+
+class FakeChannelSearchMM:
+    instances: ClassVar[list[FakeChannelSearchMM]] = []
+    teams: ClassVar[list[dict[str, str]]] = [{"id": "team-id", "name": "demo"}]
+    results_by_term: ClassVar[dict[str, list[dict[str, str]]]] = {
+        "town": [
+            {
+                "id": "town-channel-id",
+                "name": "town-square",
+                "display_name": "Town Square",
+                "type": "O",
+                "team_id": "team-id",
+            }
+        ]
+    }
+
+    def __init__(
+        self,
+        rest_base: str,
+        token: str,
+        *,
+        timeout: float = 15.0,
+        verify_ssl: bool = True,
+    ) -> None:
+        self.rest_base = rest_base
+        self.token = token
+        self.timeout = timeout
+        self.verify_ssl = verify_ssl
+        self.closed = False
+        FakeChannelSearchMM.instances.append(self)
+
+    async def get_my_teams(self) -> list[dict[str, str]]:
+        return self.teams
+
+    async def search_channels(self, team_id: str, term: str) -> list[dict[str, str]]:
+        assert team_id == "team-id"
+        return self.results_by_term.get(term, [])
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 @pytest.fixture()
@@ -203,6 +246,58 @@ def test_api_targets_deletes_channel_alias(ctx, web_settings):
     assert response.json() == {"success": True}
     with pytest.raises(LookupError):
         ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
+def test_api_targets_channel_search_returns_results(ctx, web_settings, monkeypatch):
+    monkeypatch.setattr(web_api, "MattermostClient", FakeChannelSearchMM)
+    FakeChannelSearchMM.instances.clear()
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+
+    response = client.get("/api/web/targets/channels/search?q=town")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [
+            {
+                "id": "town-channel-id",
+                "name": "town-square",
+                "display_name": "Town Square",
+                "team_name": "demo",
+                "label": "Town Square (demo/town-square)",
+            }
+        ]
+    }
+    assert FakeChannelSearchMM.instances[0].closed is True
+
+
+def test_api_targets_adds_channel_from_search_result(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        "/api/web/targets/channels",
+        data={
+            "csrf": csrf,
+            "channel_alias": "town",
+            "channel_id": "town-channel-id",
+            "channel_label": "demo/town-square",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "alias": "town",
+        "channel_id": "town-channel-id",
+        "message": "Channel alias town added.",
+    }
+    assert ctx.user_channels.get_by_owner_and_alias("alice-id", "town").channel_id == (
+        "town-channel-id"
+    )
 
 
 def test_api_drafts_returns_drafts(ctx, web_settings):

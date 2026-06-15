@@ -146,7 +146,11 @@ export function App() {
         />
       ) : null}
       {page.name === "targets" ? (
-        <TargetsPage csrf={activeBootstrap.csrf} targets={page.targets} />
+        <TargetsPage
+          csrf={activeBootstrap.csrf}
+          locale={activeBootstrap.locale}
+          targets={page.targets}
+        />
       ) : null}
       {page.name === "drafts" ? (
         <DraftsPage drafts={page.drafts} locale={activeBootstrap.locale} />
