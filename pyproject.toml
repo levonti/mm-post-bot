@@ -1,6 +1,6 @@
 [project]
 name = "mm-post-bot"
-version = "0.1.0"
+version = "0.2.0"
 description = "Mattermost post bot with encrypted user bot tokens and draft-based sending."
 authors = [{ name = "levonti", email = "leo@badbox.net" }]
 license = "MIT"
