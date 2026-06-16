@@ -104,7 +104,10 @@ def _approved_user_sections(ctx: CommandContext) -> list[str]:
         ),
         _section(
             ctx.t("help.publishing.title"),
-            [ctx.t("help.publishing.send")],
+            [
+                ctx.t("help.publishing.send"),
+                ctx.t("help.publishing.web"),
+            ],
         ),
     ]
 

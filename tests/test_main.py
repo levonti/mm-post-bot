@@ -52,6 +52,7 @@ def _settings() -> Settings:
         mm_admins="alice",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
         token_encryption_key=VALID_FERNET_KEY,
+        web_session_secret="s" * 32,
         mm_verify_ssl=False,
     )
 

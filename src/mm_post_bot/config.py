@@ -1,5 +1,5 @@
 from cryptography.fernet import Fernet
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .i18n import SUPPORTED_LOCALES, normalize_locale
@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     max_event_tasks: int = Field(default=32, ge=1)
     default_locale: str = Field(default="en")
+    web_base_url: HttpUrl = Field(default=HttpUrl("http://localhost:8080"))
+    web_session_secret: SecretStr = Field(..., min_length=32)
+    web_cookie_secure: bool = Field(default=False)
+    web_host: str = Field(default="0.0.0.0", min_length=1)
+    web_port: int = Field(default=8080, ge=1, le=65535)
+    web_login_token_ttl_seconds: int = Field(default=300, ge=30, le=3600)
+    web_session_max_age_seconds: int = Field(default=7 * 24 * 60 * 60, ge=300)
 
     @field_validator("token_encryption_key")
     @classmethod
@@ -30,6 +37,19 @@ class Settings(BaseSettings):
             Fernet(value.encode())
         except (TypeError, ValueError) as exc:
             raise ValueError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
+        return value
+
+    @field_validator("web_session_secret", mode="before")
+    @classmethod
+    def validate_web_session_secret(cls, value: object) -> object:
+        if isinstance(value, SecretStr):
+            secret = value.get_secret_value()
+        elif isinstance(value, str):
+            secret = value
+        else:
+            return value
+        if len(secret) < 32:
+            raise ValueError("WEB_SESSION_SECRET must be at least 32 characters")
         return value
 
     @field_validator("default_locale")

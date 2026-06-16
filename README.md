@@ -50,6 +50,13 @@ cp .env.example .env
 | `MM_VERIFY_SSL` | no | Проверять TLS-сертификат Mattermost, по умолчанию `true`. |
 | `DB_URL` | yes | PostgreSQL DSN для локального запуска через `uv`. |
 | `TOKEN_ENCRYPTION_KEY` | yes | Fernet key для шифрования user bot tokens. |
+| `WEB_BASE_URL` | no | Базовый URL web UI для одноразовых ссылок из `!web`, по умолчанию `http://localhost:8080`. |
+| `WEB_SESSION_SECRET` | yes | Secret длиной минимум 32 символа для подписанных web login/session cookies. |
+| `WEB_COOKIE_SECURE` | no | Добавлять флаг `Secure` к session cookie; для локального HTTP по умолчанию `false`, для HTTPS ставьте `true`. |
+| `WEB_HOST` | no | Host, на котором слушает web-процесс, по умолчанию `0.0.0.0`. |
+| `WEB_PORT` | no | Port web-процесса и compose mapping, по умолчанию `8080`. |
+| `WEB_LOGIN_TOKEN_TTL_SECONDS` | no | TTL одноразовых web login tokens в секундах, по умолчанию `300`. |
+| `WEB_SESSION_MAX_AGE_SECONDS` | no | Максимальный возраст web-сессии в секундах, по умолчанию `604800`. |
 | `LOG_LEVEL` | no | Уровень логирования, по умолчанию `INFO`. |
 | `MAX_EVENT_TASKS` | no | Максимум одновременно обрабатываемых Mattermost events, по умолчанию `32`. |
 | `DEFAULT_LOCALE` | no | Язык ответов по умолчанию: `en` или `ru`, по умолчанию `en`. |
@@ -86,9 +93,36 @@ docker compose up -d --build
 docker compose logs -f mm-post-bot
 ```
 
-Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `DB_URL` внутри контейнера
-формируется из `POSTGRES_USER`, `POSTGRES_PASSWORD` и `POSTGRES_DB`; compose не задает
-пароль PostgreSQL по умолчанию.
+Compose поднимает сервисы `mm-post-bot`, `mm-post-bot-web` и `postgres:15-alpine`.
+`DB_URL` внутри контейнеров формируется из `POSTGRES_USER`, `POSTGRES_PASSWORD` и
+`POSTGRES_DB`; compose не задает пароль PostgreSQL по умолчанию.
+
+## Web UI
+
+Web UI - приватное companion workspace для одобренных пользователей, а не публичный landing
+page. Запустите приложение через Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+Одобренный пользователь открывает DM с manager-ботом и выполняет:
+
+```text
+!web
+```
+
+Бот вернет одноразовую login-ссылку, которая открывает web UI. В web UI можно составлять,
+сохранять, редактировать и публиковать drafts, просматривать targets и default, задавать или
+очищать default, а также смотреть audit.
+
+Создание channel alias по-прежнему поддерживает команду из нужного канала:
+
+```text
+@postbot !channel add-current <alias>
+```
+
+Dynamic channel lookup и scheduled posting в эту фазу не входят.
 
 ## Порядок обновления
 
@@ -119,6 +153,7 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 !default
 !default set --bot <alias> --channel <channel_alias>
 !default clear
+!web
 !draft
 !draft cancel
 !draft list
@@ -228,11 +263,13 @@ posting bot account.
   отклонен при старте.
 - `TOKEN_ENCRYPTION_KEY` должен храниться как secret. Потеря ключа сделает сохраненные токены
   нерасшифровываемыми.
+- `WEB_SESSION_SECRET` должен храниться как secret и быть длиной минимум 32 символа; он нужен
+  для signed web login/session support.
 - Токен, добавленный через `!bot add`, доступен приложению для отправки сообщений от имени
   соответствующего Mattermost-бота.
 - Удаление alias через `!bot remove` мягкое: старые audit records сохраняются.
 - Удаление channel alias через `!channel remove` мягкое: старые audit records сохраняются.
-- MVP не реализует UI, очередь повторных отправок, rate limiting, ротацию ключей шифрования и
-  автоматическое создание Mattermost bot accounts.
+- MVP не реализует очередь повторных отправок, scheduled posting, dynamic channel lookup,
+  rate limiting, ротацию ключей шифрования и автоматическое создание Mattermost bot accounts.
 - WebSocket listener переподключается с backoff, но длительная недоступность Mattermost или
   PostgreSQL все еще требует наблюдения через логи и внешний process supervisor.

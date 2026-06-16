@@ -89,6 +89,22 @@ CREATE TABLE IF NOT EXISTS post_draft (
 );
 CREATE INDEX IF NOT EXISTS idx_post_draft_owner ON post_draft(owner_user_id, status, created_at);
 
+CREATE TABLE IF NOT EXISTS draft_attachment (
+    id                 BIGSERIAL PRIMARY KEY,
+    draft_id           BIGINT NOT NULL REFERENCES post_draft(id),
+    owner_user_id      TEXT NOT NULL REFERENCES app_user(user_id),
+    filename           TEXT NOT NULL,
+    content_type       TEXT NOT NULL,
+    size_bytes         BIGINT NOT NULL CHECK (size_bytes >= 0),
+    data               BYTEA NOT NULL,
+    status             TEXT NOT NULL CHECK (status IN ('staged', 'uploaded', 'deleted')),
+    mattermost_file_id TEXT,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_draft_attachment_draft
+    ON draft_attachment(owner_user_id, draft_id, status, created_at);
+
 -- draft_id and user_bot_id stay nullable and non-FK so failed or deleted records remain auditable.
 CREATE TABLE IF NOT EXISTS post_audit_log (
     id                    BIGSERIAL PRIMARY KEY,
@@ -110,6 +126,20 @@ CREATE TABLE IF NOT EXISTS post_audit_log (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_post_audit_user ON post_audit_log(caller_user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS web_login_token (
+    id             BIGSERIAL PRIMARY KEY,
+    owner_user_id  TEXT NOT NULL REFERENCES app_user(user_id),
+    token_sha256   TEXT NOT NULL UNIQUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ NOT NULL,
+    used_at        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_web_login_token_owner
+    ON web_login_token(owner_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_web_login_token_usable
+    ON web_login_token(token_sha256, expires_at)
+    WHERE used_at IS NULL;
 """
 
 

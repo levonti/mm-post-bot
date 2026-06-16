@@ -1,3 +1,12 @@
+FROM node:22-slim AS frontend-builder
+
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci
+COPY frontend ./frontend
+COPY src ./src
+RUN cd frontend && npm run build
+
 FROM python:3.14-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -12,6 +21,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src ./src
+COPY --from=frontend-builder /app/src/mm_post_bot/web/static/spa ./src/mm_post_bot/web/static/spa
 RUN uv sync --frozen --no-dev
 
 FROM python:3.14-slim AS runtime

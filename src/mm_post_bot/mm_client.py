@@ -42,8 +42,16 @@ class MattermostClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _request(self, method: str, path: str, *, json: Any | None = None) -> Any:
-        response = await self._client.request(method, path, json=json)
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: Any | None = None,
+        files: Any | None = None,
+        json: Any | None = None,
+    ) -> Any:
+        response = await self._client.request(method, path, data=data, files=files, json=json)
         if response.status_code >= 400:
             try:
                 payload = response.json()
@@ -75,6 +83,38 @@ class MattermostClient:
             await self._request("POST", "/channels/direct", json=[user_id_a, user_id_b]),
         )
 
+    async def get_my_teams(self) -> list[dict[str, Any]]:
+        return cast(list[dict[str, Any]], await self._request("GET", "/users/me/teams"))
+
+    async def search_channels(self, team_id: str, term: str) -> list[dict[str, Any]]:
+        encoded_team_id = quote(team_id, safe="")
+        return cast(
+            list[dict[str, Any]],
+            await self._request(
+                "POST",
+                f"/teams/{encoded_team_id}/channels/search",
+                json={"term": term},
+            ),
+        )
+
+    async def get_channel(self, channel_id: str) -> dict[str, Any]:
+        encoded_channel_id = quote(channel_id, safe="")
+        return cast(
+            dict[str, Any],
+            await self._request("GET", f"/channels/{encoded_channel_id}"),
+        )
+
+    async def get_channel_member(self, channel_id: str, user_id: str) -> dict[str, Any]:
+        encoded_channel_id = quote(channel_id, safe="")
+        encoded_user_id = quote(user_id, safe="")
+        return cast(
+            dict[str, Any],
+            await self._request(
+                "GET",
+                f"/channels/{encoded_channel_id}/members/{encoded_user_id}",
+            ),
+        )
+
     async def get_channel_by_team_and_name(
         self,
         team_name: str,
@@ -90,12 +130,49 @@ class MattermostClient:
             ),
         )
 
-    async def create_post(self, channel_id: str, message: str) -> dict[str, Any]:
+    async def upload_file(
+        self,
+        channel_id: str,
+        *,
+        filename: str,
+        content_type: str,
+        data: bytes,
+    ) -> dict[str, Any]:
+        payload = await self._request(
+            "POST",
+            "/files",
+            data={"channel_id": channel_id},
+            files={"files": (filename, data, content_type)},
+        )
+        if not isinstance(payload, dict):
+            raise MattermostError(
+                500,
+                "Mattermost file upload returned an invalid payload",
+                payload,
+            )
+        file_infos = payload.get("file_infos")
+        if (
+            not isinstance(file_infos, list)
+            or not file_infos
+            or not isinstance(file_infos[0], dict)
+        ):
+            raise MattermostError(500, "Mattermost file upload did not return file info", payload)
+        return cast(dict[str, Any], file_infos[0])
+
+    async def create_post(
+        self,
+        channel_id: str,
+        message: str,
+        file_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"channel_id": channel_id, "message": message}
+        if file_ids:
+            payload["file_ids"] = file_ids
         return cast(
             dict[str, Any],
             await self._request(
                 "POST",
                 "/posts",
-                json={"channel_id": channel_id, "message": message},
+                json=payload,
             ),
         )

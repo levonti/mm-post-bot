@@ -14,6 +14,7 @@ from mm_post_bot.dispatcher import CommandContextFactory
 from mm_post_bot.mm_client import MattermostClient, MattermostError
 from mm_post_bot.repository import (
     AuditRepo,
+    DraftAttachmentRepo,
     DraftCaptureRepo,
     PostDraftRepo,
     UserBotRepo,
@@ -22,8 +23,10 @@ from mm_post_bot.repository import (
     UserPostDefaultRepo,
     UserPreferenceRepo,
     UserRepo,
+    WebLoginTokenRepo,
 )
 from mm_post_bot.security import encrypt_token, fingerprint_token, hash_message
+from mm_post_bot.services.web_auth import hash_login_token
 
 POSTGRES_IMAGE = "postgres:15-alpine"
 
@@ -90,12 +93,50 @@ class FakeTokenMM:
             raise channel
         return channel
 
-    async def create_post(self, channel_id: str, message: str) -> dict[str, Any]:
+    async def upload_file(
+        self,
+        channel_id: str,
+        *,
+        filename: str,
+        content_type: str,
+        data: bytes,
+    ) -> dict[str, Any]:
+        file_info = {
+            "id": f"file-{len(CREATED_UPLOADS) + 1}",
+            "channel_id": channel_id,
+            "filename": filename,
+            "content_type": content_type,
+            "data": data,
+            "token": self.token,
+        }
+        CREATED_UPLOADS.append(file_info)
+        return file_info
+
+    async def get_channel_member(self, channel_id: str, user_id: str) -> dict[str, Any]:
+        configured = TOKEN_CHANNEL_MEMBERS.get((self.token, channel_id, user_id))
+        if isinstance(configured, BaseException):
+            raise configured
+        if configured is not None:
+            return configured
+        return {"channel_id": channel_id, "user_id": user_id}
+
+    async def create_post(
+        self,
+        channel_id: str,
+        message: str,
+        file_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
         configured = TOKEN_POST_RESULTS.get((self.token, channel_id))
         if isinstance(configured, BaseException):
             raise configured
         if configured is not None:
-            post = configured | {"channel_id": channel_id, "message": message, "token": self.token}
+            post = configured | {
+                "channel_id": channel_id,
+                "message": message,
+                "token": self.token,
+            }
+            if file_ids:
+                post["file_ids"] = file_ids
             CREATED_POSTS.append(post)
             return post
 
@@ -105,6 +146,8 @@ class FakeTokenMM:
             "message": message,
             "token": self.token,
         }
+        if file_ids:
+            post["file_ids"] = file_ids
         CREATED_POSTS.append(post)
         return post
 
@@ -119,8 +162,10 @@ class BrokenAuditRepo:
 
 TOKEN_IDENTITIES: dict[str, dict[str, Any] | BaseException] = {}
 TOKEN_CHANNELS: dict[tuple[str, str, str], dict[str, Any] | BaseException] = {}
+TOKEN_CHANNEL_MEMBERS: dict[tuple[str, str, str], dict[str, Any] | BaseException] = {}
 TOKEN_POST_RESULTS: dict[tuple[str, str], dict[str, Any] | BaseException] = {}
 CREATED_POSTS: list[dict[str, Any]] = []
+CREATED_UPLOADS: list[dict[str, Any]] = []
 FERNET_KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 
 
@@ -134,12 +179,16 @@ class CommandFixture:
     user_post_defaults: UserPostDefaultRepo
     draft_captures: DraftCaptureRepo
     post_drafts: PostDraftRepo
+    draft_attachments: DraftAttachmentRepo
+    web_login_tokens: WebLoginTokenRepo
     audits: AuditRepo
     manager_mm: FakeMM
     token_identities: dict[str, dict[str, Any] | BaseException]
     token_channels: dict[tuple[str, str, str], dict[str, Any] | BaseException]
+    token_channel_members: dict[tuple[str, str, str], dict[str, Any] | BaseException]
     token_post_results: dict[tuple[str, str], dict[str, Any] | BaseException]
     created_posts: list[dict[str, Any]]
+    created_uploads: list[dict[str, Any]]
 
     def make(
         self,
@@ -161,6 +210,8 @@ class CommandFixture:
             user_post_default_repo=self.user_post_defaults,
             draft_capture_repo=self.draft_captures,
             post_draft_repo=self.post_drafts,
+            draft_attachment_repo=self.draft_attachments,
+            web_login_token_repo=self.web_login_tokens,
             audit_repo=self.audits,
             manager_mm=cast(MattermostClient, self.manager_mm),
             manager_user_id="manager-id",
@@ -169,6 +220,8 @@ class CommandFixture:
             mm_url="https://mm.internal",
             token_encryption_key=FERNET_KEY,
             mm_verify_ssl=True,
+            web_base_url="https://posts.internal",
+            web_login_token_ttl_seconds=300,
             default_locale="en",
             locale=self.user_preferences.get_locale(caller_user_id) or "en",
         )
@@ -190,12 +243,20 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
     pg_conn.execute("BEGIN")
     TOKEN_IDENTITIES.clear()
     TOKEN_CHANNELS.clear()
+    TOKEN_CHANNEL_MEMBERS.clear()
     TOKEN_POST_RESULTS.clear()
     CREATED_POSTS.clear()
+    CREATED_UPLOADS.clear()
     if find_spec("mm_post_bot.commands.bot") is not None:
         monkeypatch.setattr("mm_post_bot.commands.bot.MattermostClient", FakeTokenMM)
     if find_spec("mm_post_bot.commands.send") is not None:
-        monkeypatch.setattr("mm_post_bot.commands.send.MattermostClient", FakeTokenMM)
+        monkeypatch.setattr(
+            "mm_post_bot.commands.send.MattermostClient",
+            FakeTokenMM,
+            raising=False,
+        )
+    if find_spec("mm_post_bot.services.posting") is not None:
+        monkeypatch.setattr("mm_post_bot.services.posting.MattermostClient", FakeTokenMM)
 
     users = UserRepo(pg_conn)
     yield CommandFixture(
@@ -207,17 +268,22 @@ def ctx(pg_conn: DbConn, monkeypatch: pytest.MonkeyPatch) -> CommandFixture:
         user_post_defaults=UserPostDefaultRepo(pg_conn),
         draft_captures=DraftCaptureRepo(pg_conn),
         post_drafts=PostDraftRepo(pg_conn),
+        draft_attachments=DraftAttachmentRepo(pg_conn),
+        web_login_tokens=WebLoginTokenRepo(pg_conn),
         audits=AuditRepo(pg_conn),
         manager_mm=FakeMM(),
         token_identities=TOKEN_IDENTITIES,
         token_channels=TOKEN_CHANNELS,
+        token_channel_members=TOKEN_CHANNEL_MEMBERS,
         token_post_results=TOKEN_POST_RESULTS,
         created_posts=CREATED_POSTS,
+        created_uploads=CREATED_UPLOADS,
     )
     TOKEN_IDENTITIES.clear()
     TOKEN_CHANNELS.clear()
     TOKEN_POST_RESULTS.clear()
     CREATED_POSTS.clear()
+    CREATED_UPLOADS.clear()
     pg_conn.execute("ROLLBACK")
 
 
@@ -228,6 +294,7 @@ def test_context_factory_uses_default_locale_without_preference(pg_conn: DbConn)
         mm_admins="levonti",
         db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
         token_encryption_key=FERNET_KEY,
+        web_session_secret="s" * 32,
         default_locale="ru",
     )
     factory = CommandContextFactory(
@@ -253,6 +320,7 @@ def test_context_factory_uses_stored_user_locale(pg_conn: DbConn):
             mm_admins="levonti",
             db_url="postgresql://mm_post:secret@postgres/mm_post_bot",
             token_encryption_key=FERNET_KEY,
+            web_session_secret="s" * 32,
             default_locale="en",
         )
         factory = CommandContextFactory(
@@ -1408,6 +1476,33 @@ async def test_default_set_show_and_clear(ctx: CommandFixture):
     assert "no default" in empty_reply.lower()
 
 
+async def test_default_set_rejects_bot_that_is_not_in_channel(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    ctx.token_channel_members[("secret-token", "channel-id", "bot-id")] = MattermostError(
+        403,
+        "You do not have the appropriate permissions.",
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+
+    assert reply is not None
+    assert "add bot" in reply.lower()
+    assert "news-bot" in reply
+    assert "town" in reply
+    assert ctx.user_post_defaults.get_for_owner("alice-id") is None
+
+
 async def test_default_shows_stale_state(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
@@ -2171,3 +2266,83 @@ async def test_send_requires_approved_user(
 
     assert reply is not None
     assert expected in reply.lower()
+
+
+async def test_web_command_requires_dm(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice", channel_type="O"),
+        "!web",
+    )
+
+    assert reply == "Run !web in DM so the login link is private."
+
+
+async def test_web_command_returns_one_time_login_link(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "Open web UI:" in reply
+    assert "https://posts.internal/login?token=" in reply
+    token = reply.split("token=", 1)[1].split()[0]
+    assert (
+        ctx.web_login_tokens.get_usable(hash_login_token(token), now=datetime.now(UTC))
+        is not None
+    )
+
+
+async def test_web_command_rejects_args_without_creating_login_token(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web extra")
+
+    assert reply == "Usage: !web"
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+async def test_web_command_requires_registered_user(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "register" in reply.lower()
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+async def test_web_command_requires_approved_user(ctx: CommandFixture):
+    await dispatch(ctx.make("alice-id", "alice"), "!register")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "approval" in reply.lower()
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+async def test_web_command_rejects_blocked_user(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.users.block("alice-id", blocked_by="admin-id")
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!web")
+
+    assert reply is not None
+    assert "blocked" in reply.lower()
+    assert "token=" not in reply
+    assert _web_login_token_count(ctx, "alice-id") == 0
+
+
+def _web_login_token_count(ctx: CommandFixture, owner_user_id: str) -> int:
+    row = ctx.conn.execute(
+        "SELECT count(*) AS token_count FROM web_login_token WHERE owner_user_id = %s",
+        (owner_user_id,),
+    ).fetchone()
+    return int(row["token_count"])

@@ -89,6 +89,21 @@ class PostDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class DraftAttachment:
+    id: int
+    draft_id: int
+    owner_user_id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    data: bytes
+    status: str
+    mattermost_file_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class PostAuditRecord:
     id: int
     caller_user_id: str
@@ -107,6 +122,16 @@ class PostAuditRecord:
     error_code: str | None
     error_message: str | None
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class WebLoginToken:
+    id: int
+    owner_user_id: str
+    token_sha256: str
+    created_at: datetime
+    expires_at: datetime
+    used_at: datetime | None
 
 
 def _user_from_row(row: Any) -> AppUser:
@@ -221,6 +246,22 @@ def _post_draft_from_row(row: Any) -> PostDraft:
     )
 
 
+def _draft_attachment_from_row(row: Any) -> DraftAttachment:
+    return DraftAttachment(
+        id=row["id"],
+        draft_id=row["draft_id"],
+        owner_user_id=row["owner_user_id"],
+        filename=row["filename"],
+        content_type=row["content_type"],
+        size_bytes=row["size_bytes"],
+        data=bytes(row["data"]),
+        status=row["status"],
+        mattermost_file_id=row["mattermost_file_id"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 def _post_audit_from_row(row: Any) -> PostAuditRecord:
     return PostAuditRecord(
         id=row["id"],
@@ -241,6 +282,81 @@ def _post_audit_from_row(row: Any) -> PostAuditRecord:
         error_message=row["error_message"],
         created_at=row["created_at"],
     )
+
+
+def _web_login_token_from_row(row: Any) -> WebLoginToken:
+    return WebLoginToken(
+        id=row["id"],
+        owner_user_id=row["owner_user_id"],
+        token_sha256=row["token_sha256"],
+        created_at=row["created_at"],
+        expires_at=row["expires_at"],
+        used_at=row["used_at"],
+    )
+
+
+class WebLoginTokenRepo:
+    def __init__(self, conn: DbConn) -> None:
+        self._conn = conn
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        token_sha256: str,
+        expires_at: datetime,
+    ) -> WebLoginToken:
+        row = self._conn.execute(
+            """
+            INSERT INTO web_login_token (owner_user_id, token_sha256, expires_at)
+            VALUES (%s, %s, %s)
+            RETURNING *
+            """,
+            (owner_user_id, token_sha256, expires_at),
+        ).fetchone()
+        return _web_login_token_from_row(row)
+
+    def get_usable(self, token_sha256: str, *, now: datetime) -> WebLoginToken | None:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM web_login_token
+            WHERE token_sha256 = %s
+              AND used_at IS NULL
+              AND expires_at > %s
+            """,
+            (token_sha256, now),
+        ).fetchone()
+        if row is None:
+            return None
+        return _web_login_token_from_row(row)
+
+    def consume(self, token_sha256: str, *, now: datetime) -> WebLoginToken | None:
+        row = self._conn.execute(
+            """
+            UPDATE web_login_token
+            SET used_at = %s
+            WHERE token_sha256 = %s
+              AND used_at IS NULL
+              AND expires_at > %s
+            RETURNING *
+            """,
+            (now, token_sha256, now),
+        ).fetchone()
+        if row is None:
+            return None
+        return _web_login_token_from_row(row)
+
+    def mark_used(self, token_id: int) -> None:
+        self._conn.execute(
+            """
+            UPDATE web_login_token
+            SET used_at = %s
+            WHERE id = %s
+              AND used_at IS NULL
+            """,
+            (_now(), token_id),
+        )
 
 
 class UserRepo:
@@ -516,6 +632,24 @@ class UserChannelRepo:
             raise LookupError(f"user_channel not found: {owner_user_id}/{alias}")
         return _user_channel_from_row(row)
 
+    def rename_alias(self, owner_user_id: str, alias: str, *, new_alias: str) -> UserChannel:
+        now = _now()
+        row = self._conn.execute(
+            """
+            UPDATE user_channel
+            SET alias = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND alias = %s
+              AND deleted_at IS NULL
+            RETURNING *
+            """,
+            (new_alias, now, owner_user_id, alias),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"user_channel not found: {owner_user_id}/{alias}")
+        return _user_channel_from_row(row)
+
     def get_by_owner_and_alias(self, owner_user_id: str, alias: str) -> UserChannel:
         row = self._conn.execute(
             """
@@ -768,6 +902,32 @@ class PostDraftRepo:
             raise LookupError(f"post_draft not found: {owner_user_id}/{draft_id}")
         return _post_draft_from_row(row)
 
+    def update_message(
+        self,
+        owner_user_id: str,
+        draft_id: int,
+        *,
+        message: str,
+        message_sha256: str,
+    ) -> PostDraft:
+        now = _now()
+        row = self._conn.execute(
+            """
+            UPDATE post_draft
+            SET message = %s,
+                message_sha256 = %s,
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND id = %s
+              AND status = 'draft'
+            RETURNING *
+            """,
+            (message, message_sha256, now, owner_user_id, draft_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"editable post_draft not found: {owner_user_id}/{draft_id}")
+        return _post_draft_from_row(row)
+
     def list_for_owner(self, owner_user_id: str) -> list[PostDraft]:
         rows = self._conn.execute(
             """
@@ -832,6 +992,112 @@ class PostDraftRepo:
         if row is None:
             raise LookupError(f"eligible post_draft not found: {owner_user_id}/{draft_id}")
         return _post_draft_from_row(row)
+
+
+class DraftAttachmentRepo:
+    def __init__(self, conn: DbConn) -> None:
+        self._conn = conn
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        draft_id: int,
+        filename: str,
+        content_type: str,
+        size_bytes: int,
+        data: bytes,
+    ) -> DraftAttachment:
+        now = _now()
+        row = self._conn.execute(
+            """
+            INSERT INTO draft_attachment (
+                draft_id,
+                owner_user_id,
+                filename,
+                content_type,
+                size_bytes,
+                data,
+                status,
+                updated_at
+            )
+            SELECT id, owner_user_id, %s, %s, %s, %s, 'staged', %s
+            FROM post_draft
+            WHERE owner_user_id = %s
+              AND id = %s
+              AND status = 'draft'
+            RETURNING *
+            """,
+            (filename, content_type, size_bytes, data, now, owner_user_id, draft_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"editable post_draft not found: {owner_user_id}/{draft_id}")
+        return _draft_attachment_from_row(row)
+
+    def list_for_draft(self, owner_user_id: str, draft_id: int) -> list[DraftAttachment]:
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM draft_attachment
+            WHERE owner_user_id = %s
+              AND draft_id = %s
+              AND status != 'deleted'
+            ORDER BY created_at ASC, id ASC
+            """,
+            (owner_user_id, draft_id),
+        ).fetchall()
+        return [_draft_attachment_from_row(row) for row in rows]
+
+    def get_for_owner(
+        self,
+        owner_user_id: str,
+        draft_id: int,
+        attachment_id: int,
+    ) -> DraftAttachment:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM draft_attachment
+            WHERE owner_user_id = %s
+              AND draft_id = %s
+              AND id = %s
+              AND status != 'deleted'
+            """,
+            (owner_user_id, draft_id, attachment_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError(
+                f"draft_attachment not found: {owner_user_id}/{draft_id}/{attachment_id}"
+            )
+        return _draft_attachment_from_row(row)
+
+    def soft_delete(self, owner_user_id: str, draft_id: int, attachment_id: int) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE draft_attachment
+            SET status = 'deleted',
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND draft_id = %s
+              AND id = %s
+              AND status = 'staged'
+            """,
+            (now, owner_user_id, draft_id, attachment_id),
+        )
+
+    def mark_uploaded(self, attachment_id: int, mattermost_file_id: str) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE draft_attachment
+            SET status = 'uploaded',
+                mattermost_file_id = %s,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (mattermost_file_id, now, attachment_id),
+        )
 
 
 class AuditRepo:
@@ -899,14 +1165,17 @@ class AuditRepo:
         ).fetchone()
         return _post_audit_from_row(row)
 
-    def list_for_user(self, caller_user_id: str) -> list[PostAuditRecord]:
+    def list_for_user(self, caller_user_id: str, *, limit: int = 50) -> list[PostAuditRecord]:
+        if not 1 <= limit <= 100:
+            raise ValueError("audit limit must be between 1 and 100")
         rows = self._conn.execute(
             """
             SELECT *
             FROM post_audit_log
             WHERE caller_user_id = %s
             ORDER BY created_at DESC, id DESC
+            LIMIT %s
             """,
-            (caller_user_id,),
+            (caller_user_id, limit),
         ).fetchall()
         return [_post_audit_from_row(row) for row in rows]
