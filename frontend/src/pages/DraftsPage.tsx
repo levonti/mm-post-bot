@@ -28,7 +28,9 @@ export function DraftsPage({
         <div className="empty-state">
           <h3>{t(locale, "web.drafts.empty.title")}</h3>
           <p>{t(locale, "web.drafts.empty.body")}</p>
-          <a href="/">{t(locale, "web.drafts.empty.action")}</a>
+          <a className="secondary-button empty-state-action" href="/">
+            {t(locale, "web.drafts.empty.action")}
+          </a>
         </div>
       ) : (
         <ul className="record-list">

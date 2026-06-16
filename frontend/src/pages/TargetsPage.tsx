@@ -133,7 +133,7 @@ export function TargetsPage({
   );
 
   return (
-    <section className="target-column">
+    <section className="page-panel target-column">
       <div className="target-column-header">
         <h2>{t(locale, "web.targets.heading")}</h2>
         <button

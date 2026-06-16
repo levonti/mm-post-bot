@@ -10,7 +10,7 @@ describe("TargetsPage", () => {
   });
 
   it("renders channel display name with small muted id", () => {
-    render(
+    const { container } = render(
       <TargetsPage
         csrf="token"
         locale="en"
@@ -30,6 +30,7 @@ describe("TargetsPage", () => {
       />
     );
 
+    expect(container.firstElementChild).toHaveClass("page-panel", "target-column");
     expect(
       screen.getByRole("listitem", { name: /Posting Demo/ }).querySelector("strong")
     ).toHaveTextContent("Posting Demo");

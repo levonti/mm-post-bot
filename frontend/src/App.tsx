@@ -20,6 +20,7 @@ type DraftPayload = {
 };
 
 type TargetsPayload = Parameters<typeof TargetsPage>[0]["targets"];
+type ComposerTargetsPayload = Parameters<typeof ComposerPage>[0]["targets"];
 type AuditPayload = Parameters<typeof AuditPage>[0]["records"];
 type BotPayload = TargetsPayload["bots"][number];
 type ChannelPayload = TargetsPayload["channels"][number];
@@ -33,7 +34,7 @@ type TargetHealthPayload = {
 } | null;
 
 type PageState =
-  | { name: "composer" }
+  | { name: "composer"; targets: ComposerTargetsPayload }
   | { name: "targets"; targets: TargetsPayload }
   | { name: "drafts"; drafts: DraftPayload[] }
   | {
@@ -111,7 +112,7 @@ export function App() {
           if (!cancelled) setPage({ name: "audit", records: payload.records });
           return;
         }
-        setPage({ name: "composer" });
+        setPage({ name: "composer", targets: await loadComposerTargets() });
       } catch (caught) {
         if (!cancelled) {
           setError(caught instanceof Error ? caught.message : "Could not load page");
@@ -155,6 +156,7 @@ export function App() {
           error={formError}
           locale={activeBootstrap.locale}
           onSave={saveDraft}
+          targets={page.targets}
         />
       ) : null}
       {page.name === "targets" ? (
@@ -324,6 +326,15 @@ export function App() {
     });
   }
 
+  async function loadComposerTargets(): Promise<ComposerTargetsPayload> {
+    try {
+      const payload = await apiGet<unknown>("/api/web/targets");
+      return isComposerTargetsPayload(payload) ? payload : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function submitForm(action: () => Promise<void>): Promise<boolean> {
     try {
       setFormError(null);
@@ -334,4 +345,20 @@ export function App() {
       return false;
     }
   }
+}
+
+function isComposerTargetsPayload(payload: unknown): payload is Exclude<ComposerTargetsPayload, null | undefined> {
+  if (typeof payload !== "object" || payload === null) return false;
+  const candidate = payload as {
+    bots?: unknown;
+    channels?: unknown;
+    default?: unknown;
+    stale_default?: unknown;
+  };
+  return (
+    Array.isArray(candidate.bots) &&
+    Array.isArray(candidate.channels) &&
+    (candidate.default === null || typeof candidate.default === "object") &&
+    typeof candidate.stale_default === "boolean"
+  );
 }

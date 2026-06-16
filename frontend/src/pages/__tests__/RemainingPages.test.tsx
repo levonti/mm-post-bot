@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AuditPage } from "../AuditPage";
@@ -52,6 +52,15 @@ describe("remaining React pages", () => {
       "/drafts/7"
     );
     expect(screen.getByText("Draft body")).toBeInTheDocument();
+  });
+
+  it("renders the empty drafts action as a secondary button", () => {
+    render(<DraftsPage drafts={[]} />);
+
+    expect(screen.getByRole("link", { name: "New draft" })).toHaveClass(
+      "secondary-button",
+      "empty-state-action"
+    );
   });
 
   it("confirms before deleting a draft", async () => {
@@ -242,5 +251,47 @@ describe("remaining React pages", () => {
 
     expect(screen.getByText("success")).toBeInTheDocument();
     expect(screen.getByText("post-id")).toBeInTheDocument();
+  });
+
+  it("summarizes audit health and highlights failed records", () => {
+    render(
+      <AuditPage
+        records={[
+          {
+            id: 2,
+            created_at: "2026-06-15T01:00:00Z",
+            status: "failed",
+            draft_id: 8,
+            bot_username: "news-bot",
+            channel_link: "town",
+            mattermost_post_id: null,
+            error_message: "Bot is not a member of the target channel."
+          },
+          {
+            id: 1,
+            created_at: "2026-06-15T00:00:00Z",
+            status: "success",
+            draft_id: 3,
+            bot_username: "news-bot",
+            channel_link: "town",
+            mattermost_post_id: "post-id",
+            error_message: null
+          }
+        ]}
+      />
+    );
+
+    const summary = screen.getByRole("region", { name: "Audit summary" });
+    expect(within(summary).getByText("2")).toBeInTheDocument();
+    expect(within(summary).getByText("1 successful")).toBeInTheDocument();
+    expect(within(summary).getByText("1 failed")).toBeInTheDocument();
+    expect(within(summary).getByText("Latest: failed")).toBeInTheDocument();
+
+    expect(screen.getByText("failed")).toHaveClass("status-badge-failed");
+    expect(screen.getByText("success")).toHaveClass("status-badge-success");
+    expect(screen.getByText("#8")).toBeInTheDocument();
+    expect(
+      screen.getByText("Bot is not a member of the target channel.")
+    ).toHaveClass("audit-error-text");
   });
 });

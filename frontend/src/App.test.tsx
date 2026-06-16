@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -10,24 +10,47 @@ describe("App", () => {
   });
 
   it("loads bootstrap and renders the composer shell", async () => {
-    vi.spyOn(window, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input) === "/api/web/bootstrap") {
+        return jsonResponse({
           csrf: "token",
           locale: "en",
           nav: [{ href: "/", key: "composer", label: "Composer" }],
           session: { user_id: "alice-id", username: "alice" }
-        }),
-        { headers: { "Content-Type": "application/json" }, status: 200 }
-      )
-    );
+        });
+      }
+      if (String(input) === "/api/web/targets") {
+        return jsonResponse({
+          bots: [{ alias: "news", bot_display_name: "News Bot", bot_username: "news-bot" }],
+          channels: [
+            {
+              alias: "town",
+              channel_id: "channel-id",
+              display_name: "Town Square",
+              team_name: "demo"
+            }
+          ],
+          default: { bot_alias: "news", channel_alias: "town" },
+          stale_default: false
+        });
+      }
+      throw new Error(`Unexpected request ${String(input)}`);
+    });
 
     render(<App />);
 
     expect(await screen.findByText("alice")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "mm-post-bot" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Composer" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Drafts" })).toHaveAttribute("href", "/drafts");
+    expect(screen.getByText("Default target")).toBeInTheDocument();
+    expect(screen.getByText("News Bot")).toBeInTheDocument();
+    expect(screen.getByText("Town Square")).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("demo"))).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/web/targets", {
+      headers: { Accept: "application/json" }
+    });
   });
 
   it("renders root links when opened through the app compatibility path", async () => {
@@ -50,8 +73,12 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("alice")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Composer" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "Drafts" })).toHaveAttribute("href", "/drafts");
+    const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(within(navigation).getByRole("link", { name: "Composer" })).toHaveAttribute("href", "/");
+    expect(within(navigation).getByRole("link", { name: "Drafts" })).toHaveAttribute(
+      "href",
+      "/drafts"
+    );
   });
 
   it("renders mutation errors inline", async () => {
@@ -373,3 +400,10 @@ describe("App", () => {
     });
   });
 });
+
+function jsonResponse(payload: object, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    headers: { "Content-Type": "application/json" },
+    status
+  });
+}
