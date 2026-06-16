@@ -48,7 +48,9 @@ def create_app(
     app.state.conn = conn
 
     resolved_web_dir = web_dir or Path(__file__).parent
-    app.mount("/static", StaticFiles(directory=resolved_web_dir / "static"), name="static")
+    static_dir = resolved_web_dir / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
     spa_dir = resolved_web_dir / "static" / "spa"
     spa_assets_dir = spa_dir / "assets"
     app.include_router(api_router)

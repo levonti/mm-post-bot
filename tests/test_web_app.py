@@ -133,6 +133,16 @@ def test_login_required_uses_default_locale_without_jinja(ctx, web_settings):
     assert "Откройте свежую ссылку входа из Mattermost" in response.text
 
 
+def test_app_starts_when_built_static_dir_is_missing(ctx, web_settings, tmp_path):
+    app = create_app(settings=web_settings, conn=ctx.conn, web_dir=tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/login-required")
+
+    assert response.status_code == 401
+    assert "Login required" in response.text
+
+
 def test_react_routes_serve_spa_shell(ctx, web_settings, tmp_path):
     app = create_app(settings=web_settings, conn=ctx.conn, web_dir=_spa_web_dir(tmp_path))
     client = TestClient(app)
