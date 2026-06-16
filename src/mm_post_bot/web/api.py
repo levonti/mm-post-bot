@@ -1,12 +1,32 @@
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 
 from ..db import DbConn
 from ..i18n import normalize_locale, translate
 from ..mm_client import MattermostClient, MattermostError
-from ..repository import PostAuditRecord, PostDraft, UserBot, UserChannel, UserPreferenceRepo
+from ..repository import (
+    DraftAttachment,
+    PostAuditRecord,
+    PostDraft,
+    UserBot,
+    UserChannel,
+    UserPostDefault,
+    UserPreferenceRepo,
+)
 from ..services.posting import (
+    BotChannelMembershipCheckError,
+    BotNotInChannelError,
     DraftMessageEmpty,
     PublishDraftRequest,
     PublishError,
@@ -14,12 +34,16 @@ from ..services.posting import (
     create_draft,
     publish_draft,
     update_draft_message,
+    verify_bot_in_channel,
 )
 from ..services.web_auth import WebSession
-from .deps import csrf_token, current_session, repos, require_csrf, settings
+from .deps import SESSION_COOKIE, csrf_token, current_session, repos, require_csrf, settings
 from .routes import _command_context, _optional_alias, _session_locale, _web_error
 
 api_router = APIRouter(prefix="/api/web")
+
+ALLOWED_IMAGE_CONTENT_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 NAV_ITEMS = (
     ("/", "composer", "web.nav.composer"),
@@ -50,13 +74,23 @@ def bootstrap(
     }
 
 
-def _channel_payload(channel: UserChannel) -> dict[str, object]:
-    return {
+def _channel_payload(
+    channel: UserChannel,
+    *,
+    display_name: str | None = None,
+    team_name: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "alias": channel.alias,
         "channel_id": channel.channel_id,
         "created_at": channel.created_at.isoformat(),
         "updated_at": channel.updated_at.isoformat(),
     }
+    if display_name:
+        payload["display_name"] = display_name
+    if team_name:
+        payload["team_name"] = team_name
+    return payload
 
 
 def _bot_payload(bot: UserBot) -> dict[str, object]:
@@ -68,7 +102,28 @@ def _bot_payload(bot: UserBot) -> dict[str, object]:
     }
 
 
-def _draft_payload(draft: PostDraft) -> dict[str, object]:
+def _attachment_payload(draft_id: int, attachment: DraftAttachment) -> dict[str, object]:
+    return {
+        "id": attachment.id,
+        "filename": attachment.filename,
+        "content_type": attachment.content_type,
+        "size_bytes": attachment.size_bytes,
+        "preview_url": f"/api/web/drafts/{draft_id}/attachments/{attachment.id}/content",
+    }
+
+
+def _safe_upload_filename(filename: str | None) -> str:
+    if filename is None:
+        return "image"
+    normalized = filename.replace("\\", "/").split("/")[-1].strip()
+    return normalized or "image"
+
+
+def _draft_payload(
+    draft: PostDraft,
+    *,
+    attachments: list[DraftAttachment] | None = None,
+) -> dict[str, object]:
     return {
         "id": draft.id,
         "message": draft.message,
@@ -80,6 +135,10 @@ def _draft_payload(draft: PostDraft) -> dict[str, object]:
         "sent_by_user_bot_id": draft.sent_by_user_bot_id,
         "sent_channel_id": draft.sent_channel_id,
         "mattermost_post_id": draft.mattermost_post_id,
+        "attachments": [
+            _attachment_payload(draft.id, attachment)
+            for attachment in (attachments if attachments is not None else [])
+        ],
     }
 
 
@@ -105,14 +164,95 @@ def _audit_payload(record: PostAuditRecord) -> dict[str, object]:
     }
 
 
-def _targets_payload(request: Request, session: WebSession) -> dict[str, object]:
+def _target_health_base(default: UserPostDefault) -> dict[str, object]:
+    return {
+        "bot_alias": default.bot.alias,
+        "bot_username": default.bot.bot_username,
+        "channel_alias": default.channel.alias,
+        "channel_id": default.channel.channel_id,
+    }
+
+
+async def _target_health_payload(
+    request: Request,
+    session: WebSession,
+    default: UserPostDefault | None,
+) -> dict[str, object] | None:
+    if default is None:
+        return None
+
+    ctx = _command_context(request, session)
+    try:
+        await verify_bot_in_channel(ctx, bot=default.bot, channel=default.channel)
+        return {"status": "ok", **_target_health_base(default)}
+    except BotNotInChannelError:
+        return {"status": "bot_not_in_channel", **_target_health_base(default)}
+    except BotChannelMembershipCheckError:
+        return {"status": "check_failed", **_target_health_base(default)}
+    finally:
+        await ctx.manager_mm.aclose()
+
+
+async def _channel_display_metadata(
+    request: Request,
+    channels: list[UserChannel],
+) -> dict[str, dict[str, str]]:
+    if not channels:
+        return {}
+
+    cfg = settings(request)
+    client = MattermostClient(
+        cfg.mm_rest_base,
+        cfg.mm_bot_token,
+        verify_ssl=cfg.mm_verify_ssl,
+    )
+    try:
+        teams = await client.get_my_teams()
+        team_names_by_id = {
+            str(team.get("id") or ""): str(team.get("name") or team.get("display_name") or "")
+            for team in teams
+        }
+        metadata: dict[str, dict[str, str]] = {}
+        for channel in channels:
+            try:
+                raw_channel = await client.get_channel(channel.channel_id)
+            except MattermostError:
+                continue
+            display_name = str(
+                raw_channel.get("display_name")
+                or raw_channel.get("name")
+                or channel.alias
+            )
+            team_id = str(raw_channel.get("team_id") or "")
+            team_name = team_names_by_id.get(team_id, "")
+            metadata[channel.channel_id] = {
+                "display_name": display_name,
+                "team_name": team_name,
+            }
+        return metadata
+    except MattermostError:
+        return {}
+    finally:
+        await client.aclose()
+
+
+async def _targets_payload(
+    request: Request,
+    session: WebSession,
+    *,
+    enrich_channels: bool = False,
+) -> dict[str, object]:
     repo_set = repos(request)
     default = repo_set.user_post_defaults.get_for_owner(session.user_id)
+    channels = repo_set.user_channels.list_for_owner(session.user_id)
+    channel_metadata = (
+        await _channel_display_metadata(request, channels) if enrich_channels else {}
+    )
     return {
         "bots": [_bot_payload(bot) for bot in repo_set.user_bots.list_for_owner(session.user_id)],
         "channels": [
-            _channel_payload(channel)
-            for channel in repo_set.user_channels.list_for_owner(session.user_id)
+            _channel_payload(channel, **channel_metadata.get(channel.channel_id, {}))
+            for channel in channels
         ],
         "default": (
             {"bot_alias": default.bot.alias, "channel_alias": default.channel.alias}
@@ -168,15 +308,31 @@ async def _search_mattermost_channels(request: Request, term: str) -> list[dict[
     return results
 
 
+@api_router.post("/logout")
+def logout_api(
+    request: Request,
+    response: Response,
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, bool]:
+    cfg = settings(request)
+    response.delete_cookie(
+        SESSION_COOKIE,
+        secure=cfg.web_cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"success": True}
+
+
 @api_router.get("/targets")
-def targets_api(
+async def targets_api(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
 ) -> dict[str, object]:
     return {
         "csrf": csrf,
-        **_targets_payload(request, session),
+        **await _targets_payload(request, session, enrich_channels=True),
     }
 
 
@@ -244,15 +400,47 @@ def add_channel_api(
 
 
 @api_router.post("/targets/default")
-def set_default_target_api(
+async def set_default_target_api(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
     bot_alias: Annotated[str, Form(...)],
     channel_alias: Annotated[str, Form(...)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict[str, bool]:
+    repo_set = repos(request)
     try:
-        repos(request).user_post_defaults.set_for_owner(
+        bot = repo_set.user_bots.get_by_owner_and_alias(session.user_id, bot_alias)
+        channel = repo_set.user_channels.get_by_owner_and_alias(session.user_id, channel_alias)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "target_aliases_invalid"),
+        ) from exc
+
+    ctx = _command_context(request, session)
+    try:
+        await verify_bot_in_channel(ctx, bot=bot, channel=channel)
+    except BotNotInChannelError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(
+                request,
+                session,
+                "default_bot_not_in_channel",
+                bot_username=bot.bot_username,
+                channel_alias=channel.alias,
+            ),
+        ) from exc
+    except BotChannelMembershipCheckError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_web_error(request, session, "default_membership_check_failed"),
+        ) from exc
+    finally:
+        await ctx.manager_mm.aclose()
+
+    try:
+        repo_set.user_post_defaults.set_for_owner(
             session.user_id,
             bot_alias=bot_alias,
             channel_alias=channel_alias,
@@ -351,11 +539,15 @@ def drafts_api(
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
 ) -> dict[str, object]:
+    repo_set = repos(request)
     return {
         "csrf": csrf,
         "drafts": [
-            _draft_payload(draft)
-            for draft in repos(request).post_drafts.list_for_owner(session.user_id)
+            _draft_payload(
+                draft,
+                attachments=repo_set.draft_attachments.list_for_draft(session.user_id, draft.id),
+            )
+            for draft in repo_set.post_drafts.list_for_owner(session.user_id)
         ],
     }
 
@@ -387,14 +579,15 @@ async def update_draft_api(
 
 
 @api_router.get("/drafts/{draft_id}")
-def draft_detail_api(
+async def draft_detail_api(
     request: Request,
     session: Annotated[WebSession, Depends(current_session)],
     csrf: Annotated[str, Depends(csrf_token)],
     draft_id: int,
 ) -> dict[str, object]:
     try:
-        draft = repos(request).post_drafts.get_for_owner(session.user_id, draft_id)
+        repo_set = repos(request)
+        draft = repo_set.post_drafts.get_for_owner(session.user_id, draft_id)
     except LookupError as exc:
         raise HTTPException(
             status_code=404,
@@ -402,7 +595,79 @@ def draft_detail_api(
         ) from exc
     if draft.status != "draft":
         raise HTTPException(status_code=404, detail=_web_error(request, session, "draft_not_found"))
-    return {"csrf": csrf, "draft": _draft_payload(draft), **_targets_payload(request, session)}
+    default = repo_set.user_post_defaults.get_for_owner(session.user_id)
+    return {
+        "csrf": csrf,
+        "draft": _draft_payload(
+            draft,
+            attachments=repo_set.draft_attachments.list_for_draft(session.user_id, draft.id),
+        ),
+        "target_health": await _target_health_payload(request, session, default),
+        **await _targets_payload(request, session),
+    }
+
+
+@api_router.post("/drafts/{draft_id}/attachments")
+async def upload_draft_attachment_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    file: Annotated[UploadFile, File(...)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, object]:
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+
+    data = await file.read()
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(status_code=400, detail="Image is too large")
+
+    try:
+        attachment = repos(request).draft_attachments.create(
+            owner_user_id=session.user_id,
+            draft_id=draft_id,
+            filename=_safe_upload_filename(file.filename),
+            content_type=content_type,
+            size_bytes=len(data),
+            data=data,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_web_error(request, session, "draft_not_found"),
+        ) from exc
+    return {"attachment": _attachment_payload(draft_id, attachment)}
+
+
+@api_router.get("/drafts/{draft_id}/attachments/{attachment_id}/content")
+def draft_attachment_content_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    attachment_id: int,
+) -> Response:
+    try:
+        attachment = repos(request).draft_attachments.get_for_owner(
+            session.user_id,
+            draft_id,
+            attachment_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Attachment not found") from exc
+    return Response(content=attachment.data, media_type=attachment.content_type)
+
+
+@api_router.post("/drafts/{draft_id}/attachments/{attachment_id}/delete")
+def delete_draft_attachment_api(
+    request: Request,
+    session: Annotated[WebSession, Depends(current_session)],
+    draft_id: int,
+    attachment_id: int,
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, bool]:
+    repos(request).draft_attachments.soft_delete(session.user_id, draft_id, attachment_id)
+    return {"success": True}
 
 
 @api_router.post("/drafts/{draft_id}/publish")

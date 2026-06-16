@@ -89,6 +89,21 @@ class PostDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class DraftAttachment:
+    id: int
+    draft_id: int
+    owner_user_id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    data: bytes
+    status: str
+    mattermost_file_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class PostAuditRecord:
     id: int
     caller_user_id: str
@@ -228,6 +243,22 @@ def _post_draft_from_row(row: Any) -> PostDraft:
         sent_by_user_bot_id=row["sent_by_user_bot_id"],
         sent_channel_id=row["sent_channel_id"],
         mattermost_post_id=row["mattermost_post_id"],
+    )
+
+
+def _draft_attachment_from_row(row: Any) -> DraftAttachment:
+    return DraftAttachment(
+        id=row["id"],
+        draft_id=row["draft_id"],
+        owner_user_id=row["owner_user_id"],
+        filename=row["filename"],
+        content_type=row["content_type"],
+        size_bytes=row["size_bytes"],
+        data=bytes(row["data"]),
+        status=row["status"],
+        mattermost_file_id=row["mattermost_file_id"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 
@@ -961,6 +992,112 @@ class PostDraftRepo:
         if row is None:
             raise LookupError(f"eligible post_draft not found: {owner_user_id}/{draft_id}")
         return _post_draft_from_row(row)
+
+
+class DraftAttachmentRepo:
+    def __init__(self, conn: DbConn) -> None:
+        self._conn = conn
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        draft_id: int,
+        filename: str,
+        content_type: str,
+        size_bytes: int,
+        data: bytes,
+    ) -> DraftAttachment:
+        now = _now()
+        row = self._conn.execute(
+            """
+            INSERT INTO draft_attachment (
+                draft_id,
+                owner_user_id,
+                filename,
+                content_type,
+                size_bytes,
+                data,
+                status,
+                updated_at
+            )
+            SELECT id, owner_user_id, %s, %s, %s, %s, 'staged', %s
+            FROM post_draft
+            WHERE owner_user_id = %s
+              AND id = %s
+              AND status = 'draft'
+            RETURNING *
+            """,
+            (filename, content_type, size_bytes, data, now, owner_user_id, draft_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"editable post_draft not found: {owner_user_id}/{draft_id}")
+        return _draft_attachment_from_row(row)
+
+    def list_for_draft(self, owner_user_id: str, draft_id: int) -> list[DraftAttachment]:
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM draft_attachment
+            WHERE owner_user_id = %s
+              AND draft_id = %s
+              AND status != 'deleted'
+            ORDER BY created_at ASC, id ASC
+            """,
+            (owner_user_id, draft_id),
+        ).fetchall()
+        return [_draft_attachment_from_row(row) for row in rows]
+
+    def get_for_owner(
+        self,
+        owner_user_id: str,
+        draft_id: int,
+        attachment_id: int,
+    ) -> DraftAttachment:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM draft_attachment
+            WHERE owner_user_id = %s
+              AND draft_id = %s
+              AND id = %s
+              AND status != 'deleted'
+            """,
+            (owner_user_id, draft_id, attachment_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError(
+                f"draft_attachment not found: {owner_user_id}/{draft_id}/{attachment_id}"
+            )
+        return _draft_attachment_from_row(row)
+
+    def soft_delete(self, owner_user_id: str, draft_id: int, attachment_id: int) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE draft_attachment
+            SET status = 'deleted',
+                updated_at = %s
+            WHERE owner_user_id = %s
+              AND draft_id = %s
+              AND id = %s
+              AND status = 'staged'
+            """,
+            (now, owner_user_id, draft_id, attachment_id),
+        )
+
+    def mark_uploaded(self, attachment_id: int, mattermost_file_id: str) -> None:
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE draft_attachment
+            SET status = 'uploaded',
+                mattermost_file_id = %s,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (mattermost_file_id, now, attachment_id),
+        )
 
 
 class AuditRepo:

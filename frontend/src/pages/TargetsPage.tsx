@@ -10,6 +10,12 @@ type Channel = {
   team_name?: string;
 };
 
+type Bot = {
+  alias: string;
+  bot_display_name?: string | null;
+  bot_username: string;
+};
+
 type ChannelSearchResult = {
   id: string;
   name: string;
@@ -19,7 +25,7 @@ type ChannelSearchResult = {
 };
 
 type TargetsPayload = {
-  bots: Array<{ alias: string; bot_username: string }>;
+  bots: Bot[];
   channels: Channel[];
   default: null | { bot_alias: string; channel_alias: string };
   stale_default: boolean;
@@ -46,6 +52,7 @@ export function TargetsPage({
   const [editingAlias, setEditingAlias] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [status, setStatus] = useState("");
+  const [feedback, setFeedback] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,7 +83,15 @@ export function TargetsPage({
         .then((payload) => {
           setResults(payload.results);
           setStatus(
-            payload.results.length === 0 ? t(locale, "web.targets.no_results") : ""
+            payload.results.length === 0
+              ? t(locale, "web.targets.no_results")
+              : t(
+                  locale,
+                  payload.results.length === 1
+                    ? "web.targets.result_count_one"
+                    : "web.targets.result_count_many",
+                  { count: payload.results.length }
+                )
           );
         })
         .catch((caught: unknown) => {
@@ -95,6 +110,26 @@ export function TargetsPage({
     if (selected === null) return "";
     return selected.name || selected.display_name || selected.id;
   }, [selected]);
+  const channelLabelCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const channel of channels) {
+      const label = displayChannelWithTeam(channel);
+      counts.set(label, (counts.get(label) || 0) + 1);
+    }
+    return counts;
+  }, [channels]);
+  const defaultBot = defaultTarget
+    ? targets.bots.find((bot) => bot.alias === defaultTarget.bot_alias)
+    : undefined;
+  const defaultChannel = defaultTarget
+    ? channels.find((channel) => channel.alias === defaultTarget.channel_alias)
+    : undefined;
+  const defaultBotName = displayBot(defaultBot, defaultTarget?.bot_alias);
+  const defaultChannelName = displayChannelChoice(
+    defaultChannel,
+    channelLabelCounts,
+    defaultTarget?.channel_alias
+  );
 
   return (
     <section className="target-column">
@@ -102,27 +137,41 @@ export function TargetsPage({
         <h2>{t(locale, "web.targets.heading")}</h2>
         <button
           className="secondary-button"
-          onClick={() => setSearchOpen((current) => !current)}
+          onClick={() => {
+            if (searchOpen) {
+              resetSearch();
+              return;
+            }
+            setSearchOpen(true);
+            setFeedback("");
+          }}
           type="button"
         >
-          {t(locale, "web.targets.add_channel")}
+          {searchOpen
+            ? t(locale, "web.targets.close_search")
+            : t(locale, "web.targets.add_channel")}
         </button>
       </div>
+      {error ? (
+        <p className="notice-banner notice-error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <section className="default-target-panel">
         <h3>{t(locale, "web.common.default_target")}</h3>
         <p className={targets.stale_default ? "target-summary warning" : "target-summary"}>
           {defaultTarget
             ? t(locale, "web.targets.current_default", {
-                bot_alias: defaultTarget.bot_alias,
-                channel_alias: defaultTarget.channel_alias
+                bot_alias: defaultBotName,
+                channel_alias: defaultChannelName
               })
             : targets.stale_default
               ? t(locale, "web.common.target_stale")
               : t(locale, "web.common.target_missing")}
         </p>
         <form className="default-target-form" onSubmit={setDefault}>
-          <label htmlFor="default-bot-alias">{t(locale, "web.draft_detail.bot_alias")}</label>
+          <label htmlFor="default-bot-alias">{t(locale, "web.targets.default_bot")}</label>
           <select
             id="default-bot-alias"
             onChange={(event) => setBotAlias(event.target.value)}
@@ -130,12 +179,12 @@ export function TargetsPage({
           >
             {targets.bots.map((bot) => (
               <option key={bot.alias} value={bot.alias}>
-                {bot.alias}
+                {displayBot(bot)}
               </option>
             ))}
           </select>
           <label htmlFor="default-channel-alias">
-            {t(locale, "web.draft_detail.channel_alias")}
+            {t(locale, "web.targets.default_channel")}
           </label>
           <select
             id="default-channel-alias"
@@ -144,7 +193,7 @@ export function TargetsPage({
           >
             {channels.map((channel) => (
               <option key={channel.alias} value={channel.alias}>
-                {channel.alias}
+                {displayChannelChoice(channel, channelLabelCounts)}
               </option>
             ))}
           </select>
@@ -178,11 +227,6 @@ export function TargetsPage({
             value={query}
           />
           {status ? <p className="muted-meta">{status}</p> : null}
-          {error ? (
-            <p className="notice-banner notice-error" role="alert">
-              {error}
-            </p>
-          ) : null}
           {results.length > 0 ? (
             <ul className="channel-result-list">
               {results.map((result) => (
@@ -228,15 +272,28 @@ export function TargetsPage({
         </section>
       ) : null}
 
+      {feedback ? (
+        <p className="notice-banner notice-success" role="status">
+          {feedback}
+        </p>
+      ) : null}
+
       {channels.length === 0 ? (
         <p className="empty-state">{t(locale, "web.targets.empty_channels")}</p>
       ) : (
         <ul className="target-list">
           {channels.map((channel) => (
-            <li className="channel-row" key={channel.alias}>
+            <li
+              aria-label={channel.display_name || channel.alias}
+              className="channel-list-row"
+              key={channel.alias}
+            >
               <div className="channel-main">
                 <strong>{channel.display_name || channel.alias}</strong>
                 <span className="channel-id">{channel.channel_id}</span>
+                {channel.team_name ? (
+                  <span className="channel-team">{channel.team_name}</span>
+                ) : null}
               </div>
               {editingAlias === channel.alias ? (
                 <form className="channel-edit-form" onSubmit={renameChannel}>
@@ -259,24 +316,31 @@ export function TargetsPage({
                 </form>
               ) : (
                 <>
-                  <span className="channel-alias">{channel.alias}</span>
-                  <button
-                    type="button"
-                    aria-label={`${t(locale, "web.targets.edit_alias")} ${channel.alias}`}
-                    onClick={() => {
-                      setEditingAlias(channel.alias);
-                      setEditingValue(channel.alias);
-                    }}
-                  >
-                    {t(locale, "web.targets.edit_alias")}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`${t(locale, "web.targets.delete")} ${channel.alias}`}
-                    onClick={() => deleteChannel(channel.alias)}
-                  >
-                    {t(locale, "web.targets.delete")}
-                  </button>
+                  <span className="channel-alias">
+                    {t(locale, "web.targets.alias_value", { alias: channel.alias })}
+                  </span>
+                  <div className="channel-actions">
+                    <button
+                      className="compact-action-button"
+                      aria-label={`${t(locale, "web.targets.edit_alias")} ${channel.alias}`}
+                      onClick={() => {
+                        setEditingAlias(channel.alias);
+                        setEditingValue(channel.alias);
+                        setFeedback("");
+                      }}
+                      type="button"
+                    >
+                      {t(locale, "web.targets.edit_alias")}
+                    </button>
+                    <button
+                      className="compact-action-button danger-quiet-button"
+                      aria-label={`${t(locale, "web.targets.delete")} ${channel.alias}`}
+                      onClick={() => deleteChannel(channel.alias)}
+                      type="button"
+                    >
+                      {t(locale, "web.targets.delete")}
+                    </button>
+                  </div>
                 </>
               )}
             </li>
@@ -309,6 +373,7 @@ export function TargetsPage({
       }
     ]);
     resetSearch();
+    setFeedback(t(locale, "web.targets.channel_added", { alias: payload.alias }));
   }
 
   async function renameChannel(event: FormEvent<HTMLFormElement>) {
@@ -331,6 +396,7 @@ export function TargetsPage({
     );
     setChannelAlias((current) => (current === editingAlias ? payload.alias : current));
     setEditingAlias(null);
+    setFeedback(t(locale, "web.targets.channel_renamed"));
   }
 
   async function deleteChannel(alias: string) {
@@ -343,6 +409,7 @@ export function TargetsPage({
     setChannels((current) => current.filter((channel) => channel.alias !== alias));
     setDefaultTarget((current) => (current?.channel_alias === alias ? null : current));
     setChannelAlias((current) => (current === alias ? "" : current));
+    setFeedback(t(locale, "web.targets.channel_deleted", { alias }));
   }
 
   async function setDefault(event: FormEvent<HTMLFormElement>) {
@@ -351,8 +418,15 @@ export function TargetsPage({
     form.set("csrf", csrf);
     form.set("bot_alias", botAlias);
     form.set("channel_alias", channelAlias);
-    await apiForm("/api/web/targets/default", form);
-    setDefaultTarget({ bot_alias: botAlias, channel_alias: channelAlias });
+    setError(null);
+    try {
+      await apiForm("/api/web/targets/default", form);
+      setDefaultTarget({ bot_alias: botAlias, channel_alias: channelAlias });
+      setFeedback(t(locale, "web.targets.default_saved"));
+    } catch (caught) {
+      setFeedback("");
+      setError(caught instanceof Error ? caught.message : t(locale, "web.targets.save_error"));
+    }
   }
 
   async function clearDefault() {
@@ -360,6 +434,7 @@ export function TargetsPage({
     form.set("csrf", csrf);
     await apiForm("/api/web/targets/default/clear", form);
     setDefaultTarget(null);
+    setFeedback(t(locale, "web.targets.default_cleared"));
   }
 
   function resetSearch() {
@@ -371,4 +446,28 @@ export function TargetsPage({
     setStatus("");
     setError(null);
   }
+}
+
+function displayBot(bot: Bot | undefined, fallback = "") {
+  return bot?.bot_display_name || bot?.bot_username || bot?.alias || fallback;
+}
+
+function displayChannel(channel: Channel | undefined, fallback = "") {
+  return channel?.display_name || channel?.alias || fallback;
+}
+
+function displayChannelWithTeam(channel: Channel | undefined, fallback = "") {
+  const channelName = displayChannel(channel, fallback);
+  return channel?.team_name ? `${channelName} (${channel.team_name})` : channelName;
+}
+
+function displayChannelChoice(
+  channel: Channel | undefined,
+  labelCounts: Map<string, number>,
+  fallback = ""
+) {
+  const label = displayChannelWithTeam(channel, fallback);
+  return channel && labelCounts.get(label) && labelCounts.get(label)! > 1
+    ? `${label} / ${channel.alias}`
+    : label;
 }

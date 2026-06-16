@@ -1,5 +1,7 @@
 import { FormEvent, useState } from "react";
-import type { Locale } from "../api/types";
+import { Save } from "lucide-react";
+import type { DraftAttachmentPayload, Locale } from "../api/types";
+import { MattermostEditor } from "../components/MattermostEditor";
 import { Notice } from "../components/Notice";
 import { t } from "../i18n";
 
@@ -14,12 +16,23 @@ type ChannelOption = {
 };
 
 type DraftDetail = {
+  attachments: DraftAttachmentPayload[];
   created_at?: string;
   id: number;
   message: string;
   status: string;
   updated_at?: string;
 };
+
+type TargetHealth =
+  | {
+      bot_alias: string;
+      bot_username: string;
+      channel_alias: string;
+      channel_id: string;
+      status: "bot_not_in_channel" | "check_failed" | "ok";
+    }
+  | null;
 
 export type PublishTarget = {
   botAlias: string;
@@ -34,10 +47,13 @@ type DraftDetailPageProps = {
   draft: DraftDetail;
   error?: string | null;
   locale?: Locale;
+  onAttachImages?: (files: File[]) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
+  onDeleteAttachment?: (attachmentId: number | string) => void | Promise<void>;
   onPublish?: (target: PublishTarget) => void | Promise<void>;
-  onSave?: (message: string) => void | Promise<void>;
+  onSave?: (message: string) => boolean | void | Promise<boolean | void>;
   staleDefault?: boolean;
+  targetHealth?: TargetHealth;
 };
 
 export function DraftDetailPage({
@@ -48,18 +64,32 @@ export function DraftDetailPage({
   draft,
   error,
   locale = "en",
+  onAttachImages,
   onDelete,
+  onDeleteAttachment,
   onPublish,
   onSave,
-  staleDefault = false
+  staleDefault = false,
+  targetHealth = null
 }: DraftDetailPageProps) {
   const [message, setMessage] = useState(draft.message);
   const [botAlias, setBotAlias] = useState("");
   const [channelAlias, setChannelAlias] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState(false);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSave?.(message);
+    setSaveNotice(false);
+    setIsSaving(true);
+    try {
+      const saved = await onSave?.(message);
+      if (saved !== false) {
+        setSaveNotice(true);
+      }
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function handleDelete() {
@@ -84,7 +114,23 @@ export function DraftDetailPage({
   const defaultChannelOption = defaultTarget
     ? t(locale, "web.draft_detail.use_default_value", { value: defaultTarget.channel_alias })
     : t(locale, "web.draft_detail.use_default");
-  const publishDisabled = defaultTarget === null && (bots.length === 0 || channels.length === 0);
+  const usesDefaultTarget = botAlias === "" && channelAlias === "";
+  const blocksDefaultPublish =
+    usesDefaultTarget && targetHealth?.status === "bot_not_in_channel";
+  const publishDisabled =
+    (defaultTarget === null && (bots.length === 0 || channels.length === 0)) ||
+    blocksDefaultPublish;
+  const targetHealthMessage = targetHealth
+    ? targetHealth.status === "bot_not_in_channel"
+      ? t(locale, "web.draft_detail.bot_not_in_channel", {
+          bot_username: targetHealth.bot_username,
+          channel_alias: targetHealth.channel_alias
+        })
+      : targetHealth.status === "check_failed"
+        ? t(locale, "web.draft_detail.target_check_failed")
+        : null
+    : null;
+  const showTargetHealth = usesDefaultTarget && targetHealth && targetHealthMessage;
 
   return (
     <section className="page-panel">
@@ -108,14 +154,31 @@ export function DraftDetailPage({
         </div>
       </div>
       {error ? <Notice kind="error" message={error} /> : null}
+      {saveNotice && !error ? (
+        <Notice kind="success" message={t(locale, "web.draft_detail.saved")} />
+      ) : null}
       <div className="draft-detail-grid">
         <form className="stack-form" onSubmit={handleSave}>
           <input name="csrf" type="hidden" value={csrf} />
-          <label htmlFor="draft-message">{t(locale, "web.composer.message")}</label>
-          <textarea
+          <MattermostEditor
+            action={
+              <button className="editor-primary-action" disabled={isSaving} type="submit">
+                <Save aria-hidden="true" size={15} strokeWidth={2.1} />
+                {isSaving
+                  ? t(locale, "web.draft_detail.saving")
+                  : t(locale, "web.draft_detail.save")}
+              </button>
+            }
+            attachments={draft.attachments}
             id="draft-message"
-            name="message"
-            onChange={(event) => setMessage(event.target.value)}
+            label={t(locale, "web.composer.message")}
+            locale={locale}
+            onAttachImages={onAttachImages}
+            onChange={(value) => {
+              setMessage(value);
+              setSaveNotice(false);
+            }}
+            onDeleteAttachment={onDeleteAttachment}
             rows={8}
             value={message}
           />
@@ -123,7 +186,6 @@ export function DraftDetailPage({
             <a className="secondary-link" href="/drafts">
               {t(locale, "web.draft_detail.back")}
             </a>
-            <button type="submit">{t(locale, "web.draft_detail.save")}</button>
           </div>
         </form>
         <aside className="side-panel" aria-label={t(locale, "web.draft_detail.actions")}>
@@ -134,6 +196,24 @@ export function DraftDetailPage({
               {defaultSummary}
             </p>
           </section>
+          {showTargetHealth ? (
+            <section
+              aria-live="polite"
+              className={
+                targetHealth?.status === "bot_not_in_channel"
+                  ? "target-health-warning"
+                  : "target-health-note"
+              }
+              role={targetHealth?.status === "bot_not_in_channel" ? "alert" : "status"}
+            >
+              <strong>
+                {targetHealth.status === "bot_not_in_channel"
+                  ? t(locale, "web.draft_detail.target_blocked")
+                  : t(locale, "web.draft_detail.target_check")}
+              </strong>
+              <p>{targetHealthMessage}</p>
+            </section>
+          ) : null}
           <form className="stack-form" onSubmit={handlePublish}>
             <input name="csrf" type="hidden" value={csrf} />
             <label htmlFor="bot-alias">{t(locale, "web.draft_detail.bot_alias")}</label>
@@ -165,7 +245,9 @@ export function DraftDetailPage({
               ))}
             </select>
             <button disabled={publishDisabled} type="submit">
-              {t(locale, "web.draft_detail.publish")}
+              {blocksDefaultPublish
+                ? t(locale, "web.draft_detail.publish_blocked")
+                : t(locale, "web.draft_detail.publish")}
             </button>
           </form>
           <button className="danger-button" onClick={handleDelete} type="button">

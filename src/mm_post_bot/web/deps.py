@@ -8,6 +8,7 @@ from ..config import Settings
 from ..db import DbConn
 from ..repository import (
     AuditRepo,
+    DraftAttachmentRepo,
     PostDraftRepo,
     UserBotRepo,
     UserChannelRepo,
@@ -33,6 +34,7 @@ class WebRepos:
     user_channels: UserChannelRepo
     user_post_defaults: UserPostDefaultRepo
     post_drafts: PostDraftRepo
+    draft_attachments: DraftAttachmentRepo
     audits: AuditRepo
 
 
@@ -49,6 +51,7 @@ def repos(request: Request) -> WebRepos:
         user_channels=UserChannelRepo(conn),
         user_post_defaults=UserPostDefaultRepo(conn),
         post_drafts=PostDraftRepo(conn),
+        draft_attachments=DraftAttachmentRepo(conn),
         audits=AuditRepo(conn),
     )
 

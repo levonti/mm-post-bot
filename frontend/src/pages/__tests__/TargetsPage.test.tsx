@@ -30,9 +30,14 @@ describe("TargetsPage", () => {
       />
     );
 
-    expect(screen.getByText("Posting Demo")).toBeInTheDocument();
+    expect(
+      screen.getByRole("listitem", { name: /Posting Demo/ }).querySelector("strong")
+    ).toHaveTextContent("Posting Demo");
     expect(screen.getByText("channel-id")).toHaveClass("channel-id");
-    expect(channelAlias("posting-demo")).toBeInTheDocument();
+    expect(channelAlias("posting-demo")).toHaveTextContent("Alias: posting-demo");
+    expect(screen.getByRole("listitem", { name: /Posting Demo/ })).toHaveClass(
+      "channel-list-row"
+    );
   });
 
   it("keeps channel search closed until add channel is clicked", async () => {
@@ -51,6 +56,23 @@ describe("TargetsPage", () => {
     await user.click(screen.getByRole("button", { name: "Добавить канал" }));
 
     expect(screen.getByRole("searchbox", { name: "Поиск канала" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Закрыть поиск" })).toBeInTheDocument();
+  });
+
+  it("closes channel search from the open add state", async () => {
+    const user = userEvent.setup();
+    render(
+      <TargetsPage
+        csrf="token"
+        locale="en"
+        targets={{ bots: [], channels: [], default: null, stale_default: false }}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add channel" }));
+    await user.click(screen.getByRole("button", { name: "Close search" }));
+
+    expect(screen.queryByRole("searchbox", { name: "Search channel" })).not.toBeInTheDocument();
   });
 
   it("searches channels live and adds a selected result", async () => {
@@ -94,10 +116,12 @@ describe("TargetsPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Add channel" }));
     await user.type(screen.getByRole("searchbox", { name: "Search channel" }), "town");
+    expect(await screen.findByText("1 channel found")).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Town Square (demo/town-square)" }));
     await user.click(screen.getByRole("button", { name: "Save channel" }));
 
     await waitFor(() => expect(screen.getByText("town-channel-id")).toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("Channel town-square saved.");
     expect(fetchSpy).toHaveBeenCalledWith("/api/web/targets/channels/search?q=town", {
       headers: { Accept: "application/json" }
     });
@@ -126,6 +150,65 @@ describe("TargetsPage", () => {
         csrf="token"
         locale="en"
         targets={{
+          bots: [{ alias: "news", bot_display_name: "News Bot", bot_username: "news-bot" }],
+          channels: [
+            {
+              alias: "town",
+              channel_id: "channel-id",
+              display_name: "Town Square",
+              team_name: "demo"
+            },
+            {
+              alias: "town-ops",
+              channel_id: "channel-ops-id",
+              display_name: "Town Square",
+              team_name: "demo"
+            }
+          ],
+          default: null,
+          stale_default: false
+        }}
+      />
+    );
+
+    expect(screen.getByText("No default target selected.")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "News Bot" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Town Square (demo) / town" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Town Square (demo) / town-ops" })
+    ).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Bot"), "news");
+    await user.selectOptions(screen.getByLabelText("Channel"), "town");
+    await user.click(screen.getByRole("button", { name: "Save default" }));
+
+    expect(
+      await screen.findByText("Default: News Bot -> Town Square (demo) / town")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Default target saved.");
+
+    await user.click(screen.getByRole("button", { name: "Clear default" }));
+
+    expect(await screen.findByText("No default target selected.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Default target cleared.");
+  });
+
+  it("shows an error when the selected bot is not in the channel", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/web/targets/default" && init?.method === "POST") {
+        return jsonResponse(
+          { detail: "First add bot news-bot to Mattermost channel town." },
+          400
+        );
+      }
+      throw new Error(`Unexpected fetch ${String(input)}`);
+    });
+
+    render(
+      <TargetsPage
+        csrf="token"
+        locale="en"
+        targets={{
           bots: [{ alias: "news", bot_username: "news-bot" }],
           channels: [{ alias: "town", channel_id: "channel-id" }],
           default: null,
@@ -134,16 +217,12 @@ describe("TargetsPage", () => {
       />
     );
 
-    expect(screen.getByText("No default target selected.")).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Bot alias"), "news");
-    await user.selectOptions(screen.getByLabelText("Channel alias"), "town");
     await user.click(screen.getByRole("button", { name: "Save default" }));
 
-    expect(await screen.findByText("Default: news -> town")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Clear default" }));
-
-    expect(await screen.findByText("No default target selected.")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "First add bot news-bot to Mattermost channel town."
+    );
+    expect(screen.getByText("No default target selected.")).toBeInTheDocument();
   });
 
   it("renames a channel alias", async () => {
@@ -178,6 +257,7 @@ describe("TargetsPage", () => {
     await user.click(screen.getByRole("button", { name: "Save alias" }));
 
     await waitFor(() => expect(channelAlias("announcements")).toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("Channel alias renamed.");
   });
 
   it("confirms before deleting a channel", async () => {
@@ -232,6 +312,7 @@ describe("TargetsPage", () => {
     await user.click(screen.getByRole("button", { name: "Delete posting-demo" }));
 
     await waitFor(() => expect(screen.queryByText("Posting Demo")).not.toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("Channel posting-demo deleted.");
   });
 });
 
@@ -244,7 +325,7 @@ function jsonResponse(payload: object, status = 200): Response {
 
 function channelAlias(alias: string): HTMLElement {
   const element = screen
-    .getAllByText(alias)
+    .getAllByText((content) => content.includes(alias))
     .find((element) => element.classList.contains("channel-alias"));
   if (!element) {
     throw new Error(`Channel alias ${alias} was not rendered in the channel list`);

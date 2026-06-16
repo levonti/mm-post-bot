@@ -1,3 +1,8 @@
+from ..services.posting import (
+    BotChannelMembershipCheckError,
+    BotNotInChannelError,
+    verify_bot_in_channel,
+)
 from .access import require_approved_user
 from .context import CommandContext
 from .parser import ParsedArgs
@@ -37,14 +42,25 @@ async def set_defaults(ctx: CommandContext, args: ParsedArgs) -> str:
 
     bot_alias, channel_alias = parsed
     try:
-        ctx.user_bot_repo.get_by_owner_and_alias(ctx.caller_user_id, bot_alias)
+        bot = ctx.user_bot_repo.get_by_owner_and_alias(ctx.caller_user_id, bot_alias)
     except LookupError:
         return ctx.t("default.bot_not_found", alias=bot_alias)
 
     try:
-        ctx.user_channel_repo.get_by_owner_and_alias(ctx.caller_user_id, channel_alias)
+        channel = ctx.user_channel_repo.get_by_owner_and_alias(ctx.caller_user_id, channel_alias)
     except LookupError:
         return ctx.t("default.channel_not_found", alias=channel_alias)
+
+    try:
+        await verify_bot_in_channel(ctx, bot=bot, channel=channel)
+    except BotNotInChannelError:
+        return ctx.t(
+            "default.bot_not_in_channel",
+            bot_username=bot.bot_username,
+            channel_alias=channel.alias,
+        )
+    except BotChannelMembershipCheckError:
+        return ctx.t("default.membership_check_failed")
 
     try:
         default = ctx.user_post_default_repo.set_for_owner(

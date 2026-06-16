@@ -85,6 +85,20 @@ def test_login_sets_session_cookie_and_redirects(ctx, web_settings):
     assert "mmpost_session" in client.cookies
 
 
+def test_logout_clears_session_cookie(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post("/api/web/logout", data={"csrf": csrf})
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+    assert "mmpost_session" not in client.cookies
+
+
 def test_home_requires_session(ctx, web_settings, tmp_path):
     app = create_app(settings=web_settings, conn=ctx.conn, web_dir=_spa_web_dir(tmp_path))
     client = TestClient(app)

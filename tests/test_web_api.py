@@ -8,6 +8,7 @@ from test_commands import ctx as _commands_ctx
 from test_commands import pg_conn as _commands_pg_conn
 
 from mm_post_bot.config import Settings
+from mm_post_bot.mm_client import MattermostError
 from mm_post_bot.security import encrypt_token
 from mm_post_bot.services.web_auth import create_login_token, hash_login_token
 from mm_post_bot.web import api as web_api
@@ -31,6 +32,14 @@ class FakeChannelSearchMM:
             }
         ]
     }
+    channels_by_id: ClassVar[dict[str, dict[str, str]]] = {
+        "channel-id": {
+            "id": "channel-id",
+            "name": "town-square",
+            "display_name": "Town Square",
+            "team_id": "team-id",
+        }
+    }
 
     def __init__(
         self,
@@ -53,6 +62,9 @@ class FakeChannelSearchMM:
     async def search_channels(self, team_id: str, term: str) -> list[dict[str, str]]:
         assert team_id == "team-id"
         return self.results_by_term.get(term, [])
+
+    async def get_channel(self, channel_id: str) -> dict[str, str]:
+        return self.channels_by_id[channel_id]
 
     async def aclose(self) -> None:
         self.closed = True
@@ -106,7 +118,8 @@ def test_api_bootstrap_returns_session_csrf_locale_and_nav(ctx, web_settings):
     ]
 
 
-def test_api_targets_returns_bots_channels_default_and_csrf(ctx, web_settings):
+def test_api_targets_returns_bots_channels_default_and_csrf(ctx, web_settings, monkeypatch):
+    monkeypatch.setattr(web_api, "MattermostClient", FakeChannelSearchMM)
     app = create_app(settings=web_settings, conn=ctx.conn)
     client = TestClient(app)
     _login(client, ctx)
@@ -116,7 +129,7 @@ def test_api_targets_returns_bots_channels_default_and_csrf(ctx, web_settings):
         bot_user_id="bot-id",
         bot_username="news-bot",
         bot_display_name=None,
-        token_ciphertext="cipher",
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
         token_fingerprint="fp",
     )
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
@@ -141,10 +154,14 @@ def test_api_targets_returns_bots_channels_default_and_csrf(ctx, web_settings):
         "alias",
         "channel_id",
         "created_at",
+        "display_name",
+        "team_name",
         "updated_at",
     }
     assert payload["channels"][0]["alias"] == "town"
     assert payload["channels"][0]["channel_id"] == "channel-id"
+    assert payload["channels"][0]["display_name"] == "Town Square"
+    assert payload["channels"][0]["team_name"] == "demo"
     assert payload["default"] == {"bot_alias": "news", "channel_alias": "town"}
     assert payload["stale_default"] is False
     assert payload["csrf"]
@@ -160,7 +177,7 @@ def test_api_targets_reports_stale_default(ctx, web_settings):
         bot_user_id="bot-id",
         bot_username="news-bot",
         bot_display_name=None,
-        token_ciphertext="cipher",
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
         token_fingerprint="fp",
     )
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
@@ -325,6 +342,7 @@ def test_api_drafts_returns_drafts(ctx, web_settings):
         "sent_by_user_bot_id",
         "sent_channel_id",
         "mattermost_post_id",
+        "attachments",
     }
     assert payload["drafts"][0]["id"] == draft.id
     assert payload["drafts"][0]["message"] == "Hello from API"
@@ -389,7 +407,7 @@ def test_api_draft_detail_returns_draft(ctx, web_settings):
         bot_user_id="bot-id",
         bot_username="news-bot",
         bot_display_name=None,
-        token_ciphertext="cipher",
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
         token_fingerprint="fp",
     )
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
@@ -406,10 +424,105 @@ def test_api_draft_detail_returns_draft(ctx, web_settings):
     payload = response.json()
     assert payload["draft"]["id"] == draft.id
     assert payload["draft"]["message"] == "Detail draft"
+    assert payload["draft"]["attachments"] == []
     assert payload["bots"][0]["alias"] == "news"
     assert payload["channels"][0]["alias"] == "town"
     assert payload["default"] == {"bot_alias": "news", "channel_alias": "town"}
     assert payload["stale_default"] is False
+    assert payload["target_health"]["status"] == "ok"
+
+
+def test_api_draft_detail_reports_default_bot_missing_from_channel(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_bots.add(
+        owner_user_id="alice-id",
+        alias="news",
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
+        token_fingerprint="fp",
+    )
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    ctx.user_post_defaults.set_for_owner("alice-id", bot_alias="news", channel_alias="town")
+    ctx.token_channel_members[("secret-token", "channel-id", "bot-id")] = MattermostError(
+        403,
+        "You do not have the appropriate permissions.",
+    )
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Detail draft",
+        message_sha256="hash",
+    )
+
+    response = client.get(f"/api/web/drafts/{draft.id}")
+
+    assert response.status_code == 200
+    assert response.json()["target_health"] == {
+        "status": "bot_not_in_channel",
+        "bot_alias": "news",
+        "bot_username": "news-bot",
+        "channel_alias": "town",
+        "channel_id": "channel-id",
+    }
+
+
+def test_api_upload_image_attachment_returns_preview_and_draft_payload(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Draft with image",
+        message_sha256="hash",
+    )
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        f"/api/web/drafts/{draft.id}/attachments",
+        data={"csrf": csrf},
+        files={"file": ("launch.png", b"pngdata", "image/png")},
+    )
+
+    assert response.status_code == 200
+    attachment = response.json()["attachment"]
+    assert attachment["filename"] == "launch.png"
+    assert attachment["content_type"] == "image/png"
+    assert attachment["size_bytes"] == 7
+    assert attachment["preview_url"] == (
+        f"/api/web/drafts/{draft.id}/attachments/{attachment['id']}/content"
+    )
+    preview = client.get(attachment["preview_url"])
+    assert preview.status_code == 200
+    assert preview.content == b"pngdata"
+    assert preview.headers["content-type"] == "image/png"
+
+    detail = client.get(f"/api/web/drafts/{draft.id}")
+    assert detail.status_code == 200
+    assert detail.json()["draft"]["attachments"] == [attachment]
+
+
+def test_api_upload_attachment_rejects_non_image(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Draft with invalid file",
+        message_sha256="hash",
+    )
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        f"/api/web/drafts/{draft.id}/attachments",
+        data={"csrf": csrf},
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert ctx.draft_attachments.list_for_draft("alice-id", draft.id) == []
 
 
 def test_api_publish_draft_returns_audit_redirect_target(ctx, web_settings):
@@ -499,7 +612,7 @@ def test_api_targets_default_set_and_clear(ctx, web_settings):
         bot_user_id="bot-id",
         bot_username="news-bot",
         bot_display_name=None,
-        token_ciphertext="cipher",
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
         token_fingerprint="fp",
     )
     ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
@@ -518,6 +631,39 @@ def test_api_targets_default_set_and_clear(ctx, web_settings):
 
     assert response.status_code == 200
     assert response.json() == {"success": True}
+    assert ctx.user_post_defaults.get_for_owner("alice-id") is None
+
+
+def test_api_targets_default_rejects_bot_that_is_not_in_channel(ctx, web_settings):
+    app = create_app(settings=web_settings, conn=ctx.conn)
+    client = TestClient(app)
+    _login(client, ctx)
+    ctx.user_preferences.set_locale("alice-id", "ru")
+    ctx.user_bots.add(
+        owner_user_id="alice-id",
+        alias="news",
+        bot_user_id="bot-id",
+        bot_username="news-bot",
+        bot_display_name=None,
+        token_ciphertext=encrypt_token("secret-token", FERNET_KEY),
+        token_fingerprint="fp",
+    )
+    ctx.user_channels.add(owner_user_id="alice-id", alias="town", channel_id="channel-id")
+    ctx.token_channel_members[("secret-token", "channel-id", "bot-id")] = MattermostError(
+        403,
+        "You do not have the appropriate permissions.",
+    )
+    csrf = client.get("/api/web/bootstrap").json()["csrf"]
+
+    response = client.post(
+        "/api/web/targets/default",
+        data={"csrf": csrf, "bot_alias": "news", "channel_alias": "town"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Сначала добавьте бота news-bot в Mattermost-канал town."
+    }
     assert ctx.user_post_defaults.get_for_owner("alice-id") is None
 
 

@@ -7,6 +7,7 @@ from testcontainers.postgres import PostgresContainer
 from mm_post_bot.db import DbConn, connect_postgres, init_schema
 from mm_post_bot.repository import (
     AuditRepo,
+    DraftAttachmentRepo,
     DraftCaptureRepo,
     PostDraftRepo,
     UserBotRepo,
@@ -362,6 +363,43 @@ def test_draft_capture_and_post_draft(repos):
     captures.clear("u1")
     assert drafts.get_for_owner("u1", draft.id).message == "hello"
     assert captures.get_active("u1", now=datetime.now(UTC)) is None
+
+
+def test_draft_attachment_lifecycle(pg_conn):
+    pg_conn.execute("BEGIN")
+    try:
+        users = UserRepo(pg_conn)
+        drafts = PostDraftRepo(pg_conn)
+        attachments = DraftAttachmentRepo(pg_conn)
+        _approved_user(users, "u-attachment", "attach-user")
+        draft = drafts.create(
+            owner_user_id="u-attachment",
+            message="body",
+            message_sha256="hash",
+        )
+
+        attachment = attachments.create(
+            owner_user_id="u-attachment",
+            draft_id=draft.id,
+            filename="diagram.png",
+            content_type="image/png",
+            size_bytes=7,
+            data=b"pngdata",
+        )
+
+        assert attachment.id > 0
+        assert attachment.filename == "diagram.png"
+        assert attachment.content_type == "image/png"
+        assert attachment.size_bytes == 7
+        assert attachment.data == b"pngdata"
+        assert attachments.list_for_draft("u-attachment", draft.id) == [attachment]
+        assert attachments.get_for_owner("u-attachment", draft.id, attachment.id) == attachment
+
+        attachments.soft_delete("u-attachment", draft.id, attachment.id)
+
+        assert attachments.list_for_draft("u-attachment", draft.id) == []
+    finally:
+        pg_conn.execute("ROLLBACK")
 
 
 def test_post_draft_list_only_returns_active_owner_drafts(repos):

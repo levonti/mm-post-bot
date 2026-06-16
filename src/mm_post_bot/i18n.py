@@ -207,6 +207,12 @@ CATALOG: dict[str, dict[str, str]] = {
         "web.error.draft_not_found": "Draft not found",
         "web.error.draft_empty": "Draft message cannot be empty",
         "web.error.target_aliases_invalid": "Target aliases are invalid",
+        "web.error.default_bot_not_in_channel": (
+            "First add bot {bot_username} to Mattermost channel {channel_alias}."
+        ),
+        "web.error.default_membership_check_failed": (
+            "Could not verify that the bot is in this Mattermost channel."
+        ),
         "web.error.channel_alias_duplicate": "Channel alias already exists",
         "web.error.channel_add_invalid": "Choose a channel and enter an alias.",
         "web.error.channel_search_failed": "Could not search Mattermost channels.",
@@ -217,6 +223,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "web.error.bot_not_found": "Could not find that bot.",
         "web.error.channel_not_found": "Could not find that channel alias.",
         "web.error.storage_misconfigured": "Bot token storage is misconfigured.",
+        "web.error.bot_not_in_channel": (
+            "Add the selected bot to the target Mattermost channel before publishing."
+        ),
         "web.error.publish_failed": "Could not publish the post.",
         "web.error.local_update_failed": "Mattermost accepted the post, but local update failed.",
         "bot.dm_only": "Please add bot tokens in a direct message.",
@@ -270,6 +279,13 @@ CATALOG: dict[str, dict[str, str]] = {
             "Default channel: {channel_alias} ({channel_id})"
         ),
         "default.set": "Default target set: bot {bot_alias}, channel {channel_alias}.",
+        "default.bot_not_in_channel": (
+            "Add bot {bot_username} to Mattermost channel {channel_alias} before setting "
+            "this default."
+        ),
+        "default.membership_check_failed": (
+            "Could not verify that the bot is in this Mattermost channel."
+        ),
         "default.cleared": "Default target cleared.",
         "default.bot_not_found": "Could not find a bot named {alias}.",
         "default.channel_not_found": "Could not find a channel named {alias}.",
@@ -357,6 +373,9 @@ CATALOG: dict[str, dict[str, str]] = {
         ),
         "send.publish_failed": (
             "Could not publish the post. Please check bot permissions and channel id."
+        ),
+        "send.bot_not_in_channel": (
+            "Add the selected bot to the target Mattermost channel before publishing."
         ),
         "send.local_update_failed": (
             "Mattermost accepted the post, but the local status update failed. "
@@ -580,6 +599,12 @@ CATALOG: dict[str, dict[str, str]] = {
         "web.error.draft_not_found": "Черновик не найден",
         "web.error.draft_empty": "Текст черновика не может быть пустым",
         "web.error.target_aliases_invalid": "Target aliases указаны неверно",
+        "web.error.default_bot_not_in_channel": (
+            "Сначала добавьте бота {bot_username} в Mattermost-канал {channel_alias}."
+        ),
+        "web.error.default_membership_check_failed": (
+            "Не удалось проверить, что бот добавлен в этот Mattermost-канал."
+        ),
         "web.error.channel_alias_duplicate": "Алиас канала уже существует",
         "web.error.channel_add_invalid": "Выберите канал и укажите алиас.",
         "web.error.channel_search_failed": "Не удалось выполнить поиск каналов Mattermost.",
@@ -590,6 +615,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "web.error.bot_not_found": "Указанный бот не найден.",
         "web.error.channel_not_found": "Указанный channel alias не найден.",
         "web.error.storage_misconfigured": "Хранилище bot token настроено неверно.",
+        "web.error.bot_not_in_channel": (
+            "Добавьте выбранного бота в целевой Mattermost-канал перед публикацией."
+        ),
         "web.error.publish_failed": "Не удалось опубликовать пост.",
         "web.error.local_update_failed": (
             "Mattermost принял пост, но локальный статус не обновился."
@@ -647,6 +675,13 @@ CATALOG: dict[str, dict[str, str]] = {
             "Channel по умолчанию: {channel_alias} ({channel_id})"
         ),
         "default.set": "Цель по умолчанию задана: bot {bot_alias}, channel {channel_alias}.",
+        "default.bot_not_in_channel": (
+            "Добавьте бота {bot_username} в Mattermost-канал {channel_alias}, прежде чем "
+            "задавать эту цель."
+        ),
+        "default.membership_check_failed": (
+            "Не удалось проверить, что бот добавлен в этот Mattermost-канал."
+        ),
         "default.cleared": "Цель по умолчанию очищена.",
         "default.bot_not_found": "Бот с именем {alias} не найден.",
         "default.channel_not_found": "Channel alias {alias} не найден.",
@@ -737,6 +772,9 @@ CATALOG: dict[str, dict[str, str]] = {
             "Хранилище bot token настроено неверно. Обратитесь к администратору."
         ),
         "send.publish_failed": "Не удалось опубликовать пост. Проверьте права бота и channel id.",
+        "send.bot_not_in_channel": (
+            "Добавьте выбранного бота в целевой Mattermost-канал перед публикацией."
+        ),
         "send.local_update_failed": (
             "Mattermost принял пост, но локальный статус не обновился. "
             "Обратитесь к администратору перед повторной отправкой этого черновика."

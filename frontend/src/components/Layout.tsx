@@ -9,6 +9,7 @@ type LayoutProps = {
   nav: NavItem[];
   homeHref?: string;
   onLocaleChange?: (locale: Locale) => void | Promise<void>;
+  onLogout?: () => void | Promise<void>;
   username: string;
 };
 
@@ -19,6 +20,7 @@ export function Layout({
   locale,
   nav,
   onLocaleChange,
+  onLogout,
   username
 }: LayoutProps) {
   return (
@@ -65,6 +67,9 @@ export function Layout({
             </button>
           </div>
           <div className="user-chip">{username}</div>
+          <button className="logout-button" onClick={() => onLogout?.()} type="button">
+            {t(locale, "web.logout")}
+          </button>
         </div>
       </header>
       <main className="shell">{children}</main>

@@ -8,9 +8,10 @@ import { DraftDetailPage, type PublishTarget } from "./pages/DraftDetailPage";
 import { DraftsPage } from "./pages/DraftsPage";
 import { Layout } from "./components/Layout";
 import { Notice } from "./components/Notice";
-import type { Locale } from "./api/types";
+import type { DraftAttachmentPayload, Locale } from "./api/types";
 
 type DraftPayload = {
+  attachments: DraftAttachmentPayload[];
   id: number;
   message: string;
   status: string;
@@ -23,6 +24,13 @@ type AuditPayload = Parameters<typeof AuditPage>[0]["records"];
 type BotPayload = TargetsPayload["bots"][number];
 type ChannelPayload = TargetsPayload["channels"][number];
 type DefaultTargetPayload = TargetsPayload["default"];
+type TargetHealthPayload = {
+  bot_alias: string;
+  bot_username: string;
+  channel_alias: string;
+  channel_id: string;
+  status: "bot_not_in_channel" | "check_failed" | "ok";
+} | null;
 
 type PageState =
   | { name: "composer" }
@@ -36,6 +44,7 @@ type PageState =
       defaultTarget: DefaultTargetPayload;
       draft: DraftPayload;
       staleDefault: boolean;
+      targetHealth: TargetHealthPayload;
     }
   | { name: "audit"; records: AuditPayload };
 
@@ -81,6 +90,7 @@ export function App() {
             default: DefaultTargetPayload;
             draft: DraftPayload;
             stale_default: boolean;
+            target_health: TargetHealthPayload;
           }>(`/api/web/drafts/${draftId}`);
           if (!cancelled) {
             setPage({
@@ -90,7 +100,8 @@ export function App() {
               csrf: payload.csrf,
               defaultTarget: payload.default,
               draft: payload.draft,
-              staleDefault: payload.stale_default
+              staleDefault: payload.stale_default,
+              targetHealth: payload.target_health
             });
           }
           return;
@@ -135,6 +146,7 @@ export function App() {
       locale={activeBootstrap.locale}
       nav={nav}
       onLocaleChange={changeLanguage}
+      onLogout={logout}
       username={activeBootstrap.session.username}
     >
       {page.name === "composer" ? (
@@ -165,9 +177,14 @@ export function App() {
           error={formError}
           locale={activeBootstrap.locale}
           onDelete={() => deleteDraft(page.draft.id)}
+          onAttachImages={(files) => attachDraftImages(page.draft.id, files)}
+          onDeleteAttachment={(attachmentId) =>
+            deleteDraftAttachment(page.draft.id, Number(attachmentId))
+          }
           onPublish={(target) => publishDraft(page.draft.id, target)}
           onSave={(message) => updateDraft(page.draft.id, message)}
           staleDefault={page.staleDefault}
+          targetHealth={page.targetHealth}
         />
       ) : null}
       {page.name === "audit" ? (
@@ -180,22 +197,34 @@ export function App() {
     </Layout>
   );
 
-  async function saveDraft(message: string) {
+  async function saveDraft(message: string, files: File[] = []) {
     await submitForm(async () => {
       const form = new FormData();
       form.set("csrf", activeBootstrap.csrf);
       form.set("message", message);
       const result = await apiForm<{ id: number }>("/api/web/drafts", form);
+      await uploadDraftImages(result.id, files);
       window.location.href = `/drafts/${result.id}`;
     });
   }
 
-  async function updateDraft(draftId: number, message: string) {
-    await submitForm(async () => {
+  async function updateDraft(draftId: number, message: string): Promise<boolean> {
+    return submitForm(async () => {
       const form = new FormData();
       form.set("csrf", activeBootstrap.csrf);
       form.set("message", message);
       await apiForm(`/api/web/drafts/${draftId}`, form);
+      setPage((current) => {
+        if (current?.name !== "draft-detail" || current.draft.id !== draftId) return current;
+        return {
+          ...current,
+          draft: {
+            ...current.draft,
+            message,
+            updated_at: new Date().toISOString()
+          }
+        };
+      });
     });
   }
 
@@ -222,6 +251,60 @@ export function App() {
     });
   }
 
+  async function attachDraftImages(draftId: number, files: File[]) {
+    await submitForm(async () => {
+      const attachments = await uploadDraftImages(draftId, files);
+      setPage((current) => {
+        if (current?.name !== "draft-detail" || current.draft.id !== draftId) return current;
+        return {
+          ...current,
+          draft: {
+            ...current.draft,
+            attachments: [...current.draft.attachments, ...attachments]
+          }
+        };
+      });
+    });
+  }
+
+  async function deleteDraftAttachment(draftId: number, attachmentId: number) {
+    await submitForm(async () => {
+      const form = new FormData();
+      form.set("csrf", activeBootstrap.csrf);
+      await apiForm(`/api/web/drafts/${draftId}/attachments/${attachmentId}/delete`, form);
+      setPage((current) => {
+        if (current?.name !== "draft-detail" || current.draft.id !== draftId) return current;
+        return {
+          ...current,
+          draft: {
+            ...current.draft,
+            attachments: current.draft.attachments.filter(
+              (attachment) => attachment.id !== attachmentId
+            )
+          }
+        };
+      });
+    });
+  }
+
+  async function uploadDraftImages(
+    draftId: number,
+    files: File[]
+  ): Promise<DraftAttachmentPayload[]> {
+    const attachments: DraftAttachmentPayload[] = [];
+    for (const file of files) {
+      const form = new FormData();
+      form.set("csrf", activeBootstrap.csrf);
+      form.set("file", file);
+      const payload = await apiForm<{ attachment: DraftAttachmentPayload }>(
+        `/api/web/drafts/${draftId}/attachments`,
+        form
+      );
+      attachments.push(payload.attachment);
+    }
+    return attachments;
+  }
+
   async function changeLanguage(locale: Locale) {
     await submitForm(async () => {
       const form = new FormData();
@@ -232,12 +315,23 @@ export function App() {
     });
   }
 
-  async function submitForm(action: () => Promise<void>) {
+  async function logout() {
+    await submitForm(async () => {
+      const form = new FormData();
+      form.set("csrf", activeBootstrap.csrf);
+      await apiForm("/api/web/logout", form);
+      window.location.href = "/login-required";
+    });
+  }
+
+  async function submitForm(action: () => Promise<void>): Promise<boolean> {
     try {
       setFormError(null);
       await action();
+      return true;
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : "Request failed");
+      return false;
     }
   }
 }

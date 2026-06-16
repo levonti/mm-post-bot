@@ -27,9 +27,9 @@ def _session_locale(request: Request, session: WebSession) -> str:
     return user_preference_repo.get_locale(session.user_id) or _default_locale(request)
 
 
-def _web_error(request: Request, session: WebSession | None, key: str) -> str:
+def _web_error(request: Request, session: WebSession | None, key: str, **params: object) -> str:
     locale = _session_locale(request, session) if session is not None else _default_locale(request)
-    return translate(locale, f"web.error.{key}")
+    return translate(locale, f"web.error.{key}", **params)
 
 
 def _command_context(request: Request, session: WebSession) -> CommandContext:
@@ -51,6 +51,7 @@ def _command_context(request: Request, session: WebSession) -> CommandContext:
         user_post_default_repo=repo_set.user_post_defaults,
         draft_capture_repo=DraftCaptureRepo(conn),
         post_draft_repo=repo_set.post_drafts,
+        draft_attachment_repo=repo_set.draft_attachments,
         web_login_token_repo=repo_set.web_login_tokens,
         audit_repo=repo_set.audits,
         manager_mm=MattermostClient(

@@ -12,3 +12,11 @@ export type BootstrapPayload = {
   locale: Locale;
   nav: NavItem[];
 };
+
+export type DraftAttachmentPayload = {
+  id: number;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  preview_url: string;
+};

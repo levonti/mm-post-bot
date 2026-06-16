@@ -51,6 +51,47 @@ async def test_create_post(client):
 
 
 @respx.mock
+async def test_create_post_with_file_ids(client):
+    route = respx.post("https://mm.example/api/v4/posts").mock(
+        return_value=httpx.Response(201, json={"id": "post-id", "channel_id": "channel-id"})
+    )
+
+    post = await client.create_post("channel-id", "hello", file_ids=["file-id"])
+    assert post["id"] == "post-id"
+    assert json.loads(route.calls.last.request.content) == {
+        "channel_id": "channel-id",
+        "message": "hello",
+        "file_ids": ["file-id"],
+    }
+    await client.aclose()
+
+
+@respx.mock
+async def test_upload_file(client):
+    route = respx.post("https://mm.example/api/v4/files").mock(
+        return_value=httpx.Response(
+            201,
+            json={"file_infos": [{"id": "file-id", "name": "launch.png"}]},
+        )
+    )
+
+    file_info = await client.upload_file(
+        "channel-id",
+        filename="launch.png",
+        content_type="image/png",
+        data=b"pngdata",
+    )
+
+    assert file_info["id"] == "file-id"
+    request = route.calls.last.request
+    assert b'name="channel_id"' in request.content
+    assert b"channel-id" in request.content
+    assert b'filename="launch.png"' in request.content
+    assert b"pngdata" in request.content
+    await client.aclose()
+
+
+@respx.mock
 async def test_create_direct_channel(client):
     route = respx.post("https://mm.example/api/v4/channels/direct").mock(
         return_value=httpx.Response(201, json={"id": "dm-channel-id"})
@@ -71,6 +112,19 @@ async def test_get_my_teams(client):
     teams = await client.get_my_teams()
 
     assert teams[0]["name"] == "demo"
+    assert route.called
+    await client.aclose()
+
+
+@respx.mock
+async def test_get_channel_member(client):
+    route = respx.get("https://mm.example/api/v4/channels/channel-id/members/user-id").mock(
+        return_value=httpx.Response(200, json={"channel_id": "channel-id", "user_id": "user-id"})
+    )
+
+    member = await client.get_channel_member("channel-id", "user-id")
+
+    assert member["user_id"] == "user-id"
     assert route.called
     await client.aclose()
 

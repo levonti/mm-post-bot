@@ -24,6 +24,14 @@ class PublishError(RuntimeError):
         self.message_key = message_key
 
 
+class BotNotInChannelError(RuntimeError):
+    pass
+
+
+class BotChannelMembershipCheckError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class TargetRequest:
     bot_alias: str | None
@@ -93,6 +101,28 @@ def list_target_options(ctx: CommandContext) -> TargetOptions:
     )
 
 
+async def verify_bot_in_channel(
+    ctx: CommandContext,
+    *,
+    bot: UserBot,
+    channel: UserChannel,
+) -> None:
+    try:
+        token = decrypt_token(bot.token_ciphertext, ctx.token_encryption_key)
+    except Exception as exc:
+        raise BotChannelMembershipCheckError from exc
+    client = MattermostClient(ctx.mm_rest_base, token, verify_ssl=ctx.mm_verify_ssl)
+    try:
+        try:
+            await _ensure_bot_channel_membership(client, bot=bot, channel=channel)
+        except BotNotInChannelError:
+            raise
+        except (MattermostError, httpx.HTTPError) as exc:
+            raise BotChannelMembershipCheckError from exc
+    finally:
+        await client.aclose()
+
+
 async def publish_draft(
     ctx: CommandContext,
     request: PublishDraftRequest,
@@ -135,12 +165,44 @@ async def _publish_draft_locked(
         raise PublishError("storage_misconfigured", "send.storage_misconfigured") from exc
 
     client = MattermostClient(ctx.mm_rest_base, token, verify_ssl=ctx.mm_verify_ssl)
+    uploaded_attachments: list[tuple[int, str]] = []
     try:
         try:
-            post_payload = await client.create_post(channel.channel_id, draft.message)
+            await _ensure_bot_channel_membership(client, bot=bot, channel=channel)
+            for attachment in ctx.draft_attachment_repo.list_for_draft(
+                ctx.caller_user_id,
+                draft.id,
+            ):
+                file_payload = await client.upload_file(
+                    channel.channel_id,
+                    filename=attachment.filename,
+                    content_type=attachment.content_type,
+                    data=attachment.data,
+                )
+                mattermost_file_id = _string_field(file_payload, "id")
+                if mattermost_file_id is None:
+                    raise ValueError("file upload response did not include an id")
+                uploaded_attachments.append((attachment.id, mattermost_file_id))
+
+            post_payload = await client.create_post(
+                channel.channel_id,
+                draft.message,
+                file_ids=[file_id for _attachment_id, file_id in uploaded_attachments],
+            )
             mattermost_post_id = _string_field(post_payload, "id")
             if mattermost_post_id is None:
                 raise ValueError("post response did not include an id")
+        except BotNotInChannelError as exc:
+            _record_failed_audit_safely(
+                ctx,
+                draft=draft,
+                bot=bot,
+                channel_alias=channel.alias,
+                resolved_channel_id=channel.channel_id,
+                error_code="bot_not_in_channel",
+                error_message="Bot is not a member of the target channel.",
+            )
+            raise PublishError("bot_not_in_channel", "send.bot_not_in_channel") from exc
         except (MattermostError, httpx.HTTPError, ValueError) as exc:
             _record_failed_audit_safely(
                 ctx,
@@ -157,6 +219,8 @@ async def _publish_draft_locked(
 
     try:
         with transaction(ctx.post_draft_repo.conn):
+            for attachment_id, mattermost_file_id in uploaded_attachments:
+                ctx.draft_attachment_repo.mark_uploaded(attachment_id, mattermost_file_id)
             ctx.post_draft_repo.mark_sent(
                 ctx.caller_user_id,
                 draft.id,
@@ -190,6 +254,20 @@ async def _publish_draft_locked(
         bot=bot,
         channel=channel,
     )
+
+
+async def _ensure_bot_channel_membership(
+    client: MattermostClient,
+    *,
+    bot: UserBot,
+    channel: UserChannel,
+) -> None:
+    try:
+        await client.get_channel_member(channel.channel_id, bot.bot_user_id)
+    except MattermostError as exc:
+        if exc.status in {403, 404}:
+            raise BotNotInChannelError from exc
+        raise
 
 
 @asynccontextmanager

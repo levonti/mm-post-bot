@@ -20,6 +20,7 @@ from .i18n import FALLBACK_LOCALE, normalize_locale
 from .mm_client import MattermostClient
 from .repository import (
     AuditRepo,
+    DraftAttachmentRepo,
     DraftCaptureRepo,
     PostDraftRepo,
     UserBotRepo,
@@ -102,6 +103,7 @@ class CommandContextFactory:
             user_post_default_repo=UserPostDefaultRepo(self._conn),
             draft_capture_repo=DraftCaptureRepo(self._conn),
             post_draft_repo=PostDraftRepo(self._conn),
+            draft_attachment_repo=DraftAttachmentRepo(self._conn),
             web_login_token_repo=WebLoginTokenRepo(self._conn),
             audit_repo=AuditRepo(self._conn),
             manager_mm=self._manager_mm,

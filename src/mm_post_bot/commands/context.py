@@ -5,6 +5,7 @@ from ..i18n import translate
 from ..mm_client import MattermostClient
 from ..repository import (
     AuditRepo,
+    DraftAttachmentRepo,
     DraftCaptureRepo,
     PostDraftRepo,
     UserBotRepo,
@@ -29,6 +30,7 @@ class CommandContext:
     user_post_default_repo: UserPostDefaultRepo
     draft_capture_repo: DraftCaptureRepo
     post_draft_repo: PostDraftRepo
+    draft_attachment_repo: DraftAttachmentRepo
     web_login_token_repo: WebLoginTokenRepo
     audit_repo: AuditRepo
     manager_mm: MattermostClient

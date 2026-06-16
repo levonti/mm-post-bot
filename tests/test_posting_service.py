@@ -3,6 +3,7 @@ from test_commands import CommandFixture
 from test_commands import ctx as _commands_ctx
 from test_commands import pg_conn as _commands_pg_conn
 
+from mm_post_bot.mm_client import MattermostError
 from mm_post_bot.repository import UserBot, UserChannel
 from mm_post_bot.security import encrypt_token, hash_message
 from mm_post_bot.services.posting import (
@@ -127,6 +128,75 @@ async def test_publish_draft_uses_default_target_and_records_audit(ctx: CommandF
     assert audits[0].mattermost_post_id == "post-1"
     assert audits[0].error_code is None
     assert audits[0].error_message is None
+
+
+async def test_publish_draft_uploads_attachments_and_posts_file_ids(ctx: CommandFixture):
+    command_ctx = _approved(ctx)
+    _bot, _channel = _bot_and_channel(ctx)
+    draft = create_draft(command_ctx, "Post with image")
+    ctx.draft_attachments.create(
+        owner_user_id="alice-id",
+        draft_id=draft.id,
+        filename="launch.png",
+        content_type="image/png",
+        size_bytes=7,
+        data=b"pngdata",
+    )
+
+    result = await publish_draft(
+        command_ctx,
+        PublishDraftRequest(
+            draft_id=draft.id,
+            target=TargetRequest(bot_alias=None, channel_alias=None),
+        ),
+    )
+
+    assert result.mattermost_post_id == "post-1"
+    assert ctx.created_uploads == [
+        {
+            "id": "file-1",
+            "channel_id": "channel-id",
+            "filename": "launch.png",
+            "content_type": "image/png",
+            "data": b"pngdata",
+            "token": "secret-token",
+        }
+    ]
+    assert ctx.created_posts == [
+        {
+            "id": "post-1",
+            "channel_id": "channel-id",
+            "message": "Post with image",
+            "file_ids": ["file-1"],
+            "token": "secret-token",
+        }
+    ]
+
+
+async def test_publish_draft_rejects_target_when_bot_is_not_in_channel(
+    ctx: CommandFixture,
+):
+    command_ctx = _approved(ctx)
+    _bot, _channel = _bot_and_channel(ctx)
+    draft = create_draft(command_ctx, "Post to inaccessible channel")
+    ctx.token_channel_members[("secret-token", "channel-id", "bot-id")] = MattermostError(
+        403,
+        "You do not have the appropriate permissions.",
+    )
+
+    with pytest.raises(PublishError) as caught:
+        await publish_draft(
+            command_ctx,
+            PublishDraftRequest(
+                draft_id=draft.id,
+                target=TargetRequest(bot_alias=None, channel_alias=None),
+            ),
+        )
+
+    assert caught.value.code == "bot_not_in_channel"
+    assert ctx.created_uploads == []
+    assert ctx.created_posts == []
+    assert ctx.post_drafts.get_for_owner("alice-id", draft.id).status == "draft"
 
 
 async def test_publish_draft_returns_error_when_channel_alias_missing(ctx: CommandFixture):

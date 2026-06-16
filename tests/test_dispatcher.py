@@ -94,6 +94,7 @@ def _draft_body_ctx(
         user_post_default_repo=cast(Any, _UserPostDefaultRepo()),
         draft_capture_repo=cast(Any, _DraftCaptureRepo(active_capture)),
         post_draft_repo=cast(Any, _PostDraftRepo()),
+        draft_attachment_repo=cast(Any, object()),
         web_login_token_repo=cast(Any, object()),
         audit_repo=cast(Any, object()),
         manager_mm=cast(Any, object()),

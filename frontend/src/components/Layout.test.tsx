@@ -49,4 +49,24 @@ describe("Layout", () => {
 
     expect(onLocaleChange).toHaveBeenCalledWith("ru");
   });
+
+  it("exposes logout from the topbar", async () => {
+    const user = userEvent.setup();
+    const onLogout = vi.fn();
+    render(
+      <Layout
+        activePage="composer"
+        locale="en"
+        nav={[{ href: "/", key: "composer", label: "Composer" }]}
+        onLogout={onLogout}
+        username="alice"
+      >
+        <h1>Composer body</h1>
+      </Layout>
+    );
+
+    await user.click(screen.getByRole("button", { name: "Log out" }));
+
+    expect(onLogout).toHaveBeenCalledOnce();
+  });
 });
