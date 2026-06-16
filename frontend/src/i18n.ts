@@ -102,11 +102,13 @@ const TRANSLATIONS = {
     "web.targets.save_channel": "Save channel",
     "web.targets.clear_default": "Clear default",
     "web.targets.current_default": "Default: {bot_alias} -> {channel_alias}",
+    "web.targets.current_default_label": "Current default",
     "web.targets.save_default": "Save default",
     "web.targets.save_error": "Could not save target.",
     "web.targets.search": "Search channel",
     "web.targets.search_error": "Could not search channels.",
     "web.targets.searching": "Searching...",
+    "web.targets.selected_default_label": "Selected target",
     "web.targets.selected_channel": "Selected channel"
   },
   ru: {
@@ -210,11 +212,13 @@ const TRANSLATIONS = {
     "web.targets.save_channel": "Сохранить канал",
     "web.targets.clear_default": "Сбросить цель",
     "web.targets.current_default": "По умолчанию: {bot_alias} -> {channel_alias}",
+    "web.targets.current_default_label": "Текущая цель",
     "web.targets.save_default": "Сохранить цель",
     "web.targets.save_error": "Не удалось сохранить цель.",
     "web.targets.search": "Поиск канала",
     "web.targets.search_error": "Не удалось найти каналы.",
     "web.targets.searching": "Идет поиск...",
+    "web.targets.selected_default_label": "Выбранная цель",
     "web.targets.selected_channel": "Выбранный канал"
   }
 } as const;

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TargetsPage } from "../TargetsPage";
@@ -181,15 +181,67 @@ describe("TargetsPage", () => {
     await user.selectOptions(screen.getByLabelText("Channel"), "town");
     await user.click(screen.getByRole("button", { name: "Save default" }));
 
-    expect(
-      await screen.findByText("Default: News Bot -> Town Square (demo) / town")
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Current default")).toBeInTheDocument();
+    expect(screen.getAllByText("News Bot").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Town Square").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("demo").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("channel-id").length).toBeGreaterThan(0);
     expect(screen.getByRole("status")).toHaveTextContent("Default target saved.");
 
     await user.click(screen.getByRole("button", { name: "Clear default" }));
 
     expect(await screen.findByText("No default target selected.")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Default target cleared.");
+  });
+
+  it("shows structured metadata for the current and selected default target", async () => {
+    const user = userEvent.setup();
+    render(
+      <TargetsPage
+        csrf="token"
+        locale="en"
+        targets={{
+          bots: [
+            { alias: "news", bot_display_name: "News Bot", bot_username: "news-bot" },
+            { alias: "alerts", bot_display_name: null, bot_username: "alerts-bot" }
+          ],
+          channels: [
+            {
+              alias: "town",
+              channel_id: "channel-id",
+              display_name: "Town Square",
+              team_name: "demo"
+            },
+            {
+              alias: "town-ops",
+              channel_id: "channel-ops-id",
+              display_name: "Town Square",
+              team_name: "ops"
+            }
+          ],
+          default: { bot_alias: "news", channel_alias: "town" },
+          stale_default: false
+        }}
+      />
+    );
+
+    const defaultPanel = screen.getByRole("region", { name: "Default target" });
+    const currentSummary = within(defaultPanel).getByLabelText("Current default");
+    expect(within(currentSummary).getByText("News Bot")).toBeInTheDocument();
+    expect(within(currentSummary).getByText("news-bot")).toBeInTheDocument();
+    expect(within(currentSummary).getByText("Town Square")).toBeInTheDocument();
+    expect(within(currentSummary).getByText("demo")).toBeInTheDocument();
+    expect(within(currentSummary).getByText("channel-id")).toBeInTheDocument();
+    expect(within(currentSummary).getByText("Alias: town")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Bot"), "alerts");
+    await user.selectOptions(screen.getByLabelText("Channel"), "town-ops");
+
+    const selectedPreview = within(defaultPanel).getByLabelText("Selected target");
+    expect(within(selectedPreview).getByText("alerts-bot")).toBeInTheDocument();
+    expect(within(selectedPreview).getByText("ops")).toBeInTheDocument();
+    expect(within(selectedPreview).getByText("channel-ops-id")).toBeInTheDocument();
+    expect(within(selectedPreview).getByText("Alias: town-ops")).toBeInTheDocument();
   });
 
   it("shows an error when the selected bot is not in the channel", async () => {

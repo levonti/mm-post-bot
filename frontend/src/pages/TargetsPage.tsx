@@ -124,11 +124,12 @@ export function TargetsPage({
   const defaultChannel = defaultTarget
     ? channels.find((channel) => channel.alias === defaultTarget.channel_alias)
     : undefined;
-  const defaultBotName = displayBot(defaultBot, defaultTarget?.bot_alias);
-  const defaultChannelName = displayChannelChoice(
-    defaultChannel,
-    channelLabelCounts,
-    defaultTarget?.channel_alias
+  const selectedBot = targets.bots.find((bot) => bot.alias === botAlias);
+  const selectedChannel = channels.find((channel) => channel.alias === channelAlias);
+  const selectionMatchesDefault =
+    defaultTarget?.bot_alias === botAlias && defaultTarget.channel_alias === channelAlias;
+  const showSelectedPreview = Boolean(
+    botAlias && channelAlias && (!defaultTarget || !selectionMatchesDefault)
   );
 
   return (
@@ -158,18 +159,28 @@ export function TargetsPage({
         </p>
       ) : null}
 
-      <section className="default-target-panel">
-        <h3>{t(locale, "web.common.default_target")}</h3>
-        <p className={targets.stale_default ? "target-summary warning" : "target-summary"}>
-          {defaultTarget
-            ? t(locale, "web.targets.current_default", {
-                bot_alias: defaultBotName,
-                channel_alias: defaultChannelName
-              })
-            : targets.stale_default
+      <section
+        aria-labelledby="default-target-heading"
+        className="default-target-panel"
+      >
+        <h3 id="default-target-heading">{t(locale, "web.common.default_target")}</h3>
+        {defaultTarget ? (
+          <TargetPairSummary
+            bot={defaultBot}
+            botFallback={defaultTarget.bot_alias}
+            channel={defaultChannel}
+            channelFallback={defaultTarget.channel_alias}
+            label={t(locale, "web.targets.current_default_label")}
+            locale={locale}
+            warning={targets.stale_default}
+          />
+        ) : (
+          <p className={targets.stale_default ? "target-summary warning" : "target-summary"}>
+            {targets.stale_default
               ? t(locale, "web.common.target_stale")
               : t(locale, "web.common.target_missing")}
-        </p>
+          </p>
+        )}
         <form className="default-target-form" onSubmit={setDefault}>
           <label htmlFor="default-bot-alias">{t(locale, "web.targets.default_bot")}</label>
           <select
@@ -197,6 +208,18 @@ export function TargetsPage({
               </option>
             ))}
           </select>
+          {showSelectedPreview ? (
+            <div className="default-target-preview">
+              <TargetPairSummary
+                bot={selectedBot}
+                botFallback={botAlias}
+                channel={selectedChannel}
+                channelFallback={channelAlias}
+                label={t(locale, "web.targets.selected_default_label")}
+                locale={locale}
+              />
+            </div>
+          ) : null}
           <div className="button-row">
             <button disabled={!botAlias || !channelAlias} type="submit">
               {t(locale, "web.targets.save_default")}
@@ -470,4 +493,99 @@ function displayChannelChoice(
   return channel && labelCounts.get(label) && labelCounts.get(label)! > 1
     ? `${label} / ${channel.alias}`
     : label;
+}
+
+function TargetPairSummary({
+  bot,
+  botFallback,
+  channel,
+  channelFallback,
+  label,
+  locale,
+  warning = false
+}: {
+  bot: Bot | undefined;
+  botFallback: string;
+  channel: Channel | undefined;
+  channelFallback: string;
+  label: string;
+  locale: Locale;
+  warning?: boolean;
+}) {
+  return (
+    <div
+      aria-label={label}
+      className={warning ? "target-pair-summary warning" : "target-pair-summary"}
+      role="group"
+    >
+      <span className="target-pair-label">{label}</span>
+      <div className="target-pair-grid">
+        <TargetIdentity
+          label={t(locale, "web.targets.default_bot")}
+          meta={botMeta(bot, botFallback, locale)}
+          primary={displayBot(bot, botFallback)}
+        />
+        <span aria-hidden="true" className="target-flow-arrow">
+          -&gt;
+        </span>
+        <TargetIdentity
+          label={t(locale, "web.targets.default_channel")}
+          meta={channelMeta(channel, channelFallback, locale)}
+          primary={displayChannel(channel, channelFallback)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TargetIdentity({
+  label,
+  meta,
+  primary
+}: {
+  label: string;
+  meta: string[];
+  primary: string;
+}) {
+  return (
+    <div className="target-identity-card">
+      <span className="target-identity-label">{label}</span>
+      <strong>{primary}</strong>
+      {meta.length > 0 ? (
+        <div className="target-meta-list">
+          {meta.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function botMeta(bot: Bot | undefined, fallback: string, locale: Locale) {
+  const primary = displayBot(bot, fallback);
+  const meta = [];
+  if (bot?.bot_username && bot.bot_username !== primary) {
+    meta.push(bot.bot_username);
+  }
+  const alias = bot?.alias || fallback;
+  if (alias) {
+    meta.push(t(locale, "web.targets.alias_value", { alias }));
+  }
+  return meta;
+}
+
+function channelMeta(channel: Channel | undefined, fallback: string, locale: Locale) {
+  const meta = [];
+  if (channel?.team_name) {
+    meta.push(channel.team_name);
+  }
+  if (channel?.channel_id) {
+    meta.push(channel.channel_id);
+  }
+  const alias = channel?.alias || fallback;
+  if (alias) {
+    meta.push(t(locale, "web.targets.alias_value", { alias }));
+  }
+  return meta;
 }
