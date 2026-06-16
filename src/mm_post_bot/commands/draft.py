@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from .access import require_approved_user
 from .context import CommandContext
 from .parser import ParsedArgs
+from .posting_state import default_recovery, publish_hint, target_line, target_state
 
 CAPTURE_WINDOW = timedelta(minutes=30)
 
@@ -83,7 +84,20 @@ async def show(ctx: CommandContext, args: ParsedArgs) -> str:
     if draft.status != "draft":
         return ctx.t("draft.not_found")
 
-    return ctx.t("draft.show", draft_id=draft.id, message=draft.message)
+    state = target_state(ctx)
+    lines = [
+        ctx.t("draft.show", draft_id=draft.id, message=draft.message),
+        target_line(ctx, state),
+    ]
+    if state.status != "ready":
+        lines.append(default_recovery(ctx))
+    lines.extend(
+        [
+            publish_hint(ctx, draft.id, state),
+            ctx.t("posting_state.delete_hint", draft_id=draft.id),
+        ]
+    )
+    return "\n".join(lines)
 
 
 async def delete(ctx: CommandContext, args: ParsedArgs) -> str:

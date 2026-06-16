@@ -489,6 +489,133 @@ async def test_status_uses_selected_locale(ctx: CommandFixture):
     assert reply == "alice: статус pending, роль user."
 
 
+async def test_setup_guides_unregistered_user(ctx: CommandFixture):
+    reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert reply is not None
+    assert "Registration: not registered" in reply
+    assert "Next: !register" in reply
+    assert next_reply is not None
+    assert "Next: !register" in next_reply
+    assert "Register first" in next_reply
+
+
+async def test_setup_guides_partially_configured_approved_user(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+
+    setup_reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert setup_reply is not None
+    assert "Posting bots: 1" in setup_reply
+    assert "Channels: none" in setup_reply
+    assert "Next: !channel add <alias> <channel_id>" in setup_reply
+    assert next_reply is not None
+    assert "Next: !channel add <alias> <channel_id>" in next_reply
+    assert "Add a channel alias" in next_reply
+
+
+async def test_setup_guides_fully_configured_user_to_draft(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+
+    setup_reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert setup_reply is not None
+    assert "Default: news -> town" in setup_reply
+    assert "Next: !draft" in setup_reply
+    assert next_reply is not None
+    assert "Next: !draft" in next_reply
+    assert "Start draft capture" in next_reply
+
+
+async def test_setup_guides_fully_configured_user_with_saved_draft_to_draft_list(
+    ctx: CommandFixture,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+    ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Saved post body",
+        message_sha256=hash_message("Saved post body"),
+    )
+
+    setup_reply = await dispatch(ctx.make("alice-id", "alice"), "!setup")
+    next_reply = await dispatch(ctx.make("alice-id", "alice"), "!next")
+
+    assert setup_reply is not None
+    assert "Drafts: 1" in setup_reply
+    assert "Next: !draft list" in setup_reply
+    assert next_reply is not None
+    assert "Next: !draft list" in next_reply
+    assert "Review saved drafts" in next_reply
+
+
+async def test_setup_commands_require_dm_without_leaking_setup_state(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(
+        ctx.make("alice-id", "alice"),
+        "!default set --bot news --channel town",
+    )
+    ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Saved post body",
+        message_sha256=hash_message("Saved post body"),
+    )
+    channel_ctx = ctx.make("alice-id", "alice", channel_type="O")
+
+    setup_reply = await dispatch(channel_ctx, "!setup")
+    next_reply = await dispatch(channel_ctx, "!next")
+
+    assert setup_reply == "Please use setup commands in a direct message."
+    assert next_reply == "Please use setup commands in a direct message."
+    for reply in (setup_reply, next_reply):
+        assert "Default:" not in reply
+        assert "Drafts:" not in reply
+        assert "Next:" not in reply
+        assert "news" not in reply
+        assert "town" not in reply
+
+
 async def test_admin_lists_pending_users(ctx: CommandFixture):
     await dispatch(ctx.make("alice-id", "alice"), "!register")
     await dispatch(ctx.make("bob-id", "bob"), "!register")
@@ -841,6 +968,73 @@ async def test_draft_list_show_and_delete_only_use_own_draft_status(ctx: Command
     assert ctx.post_drafts.get_for_owner("alice-id", own.id).status == "deleted"
 
 
+async def test_draft_show_includes_ready_target_context(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!default set --bot news --channel town")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Release notes\nSecond line",
+        message_sha256=hash_message("Release notes\nSecond line"),
+    )
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {draft.id}")
+
+    assert reply is not None
+    assert f"Draft #{draft.id}" in reply
+    assert "Release notes\nSecond line" in reply
+    assert "Target: bot news (news-bot), channel town (channel-id)" in reply
+    assert f"Publish: !send {draft.id}" in reply
+    assert f"Delete: !draft delete {draft.id}" in reply
+
+
+async def test_saved_draft_reply_uses_ready_default_target(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    await dispatch(ctx.make("alice-id", "alice"), "!channel add town channel-id")
+    await dispatch(ctx.make("alice-id", "alice"), "!default set --bot news --channel town")
+    await dispatch(ctx.make("alice-id", "alice"), "!draft")
+
+    from mm_post_bot.dispatcher import handle_draft_body
+
+    reply = await handle_draft_body(ctx.make("alice-id", "alice"), "Ready default body")
+
+    assert reply is not None
+    assert "Target: bot news (news-bot), channel town (channel-id)" in reply
+    assert "Publish: !send" in reply
+    assert "--bot <alias>" not in reply
+
+
+async def test_draft_show_includes_missing_target_recovery(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Body without defaults",
+        message_sha256=hash_message("Body without defaults"),
+    )
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), f"!draft show {draft.id}")
+
+    assert reply is not None
+    assert "Target: no default bot/channel configured" in reply
+    assert "!default set --bot <alias> --channel <channel_alias>" in reply
+    assert f"!send {draft.id} --bot <alias> --channel <channel_alias>" in reply
+
+
 @pytest.mark.parametrize(
     "command",
     ["!draft", "!draft cancel", "!draft list", "!draft show 1", "!draft delete 1"],
@@ -975,6 +1169,92 @@ async def test_channel_add_lists_shows_sets_and_removes_alias(ctx: CommandFixtur
     assert "removed" in removed.lower()
     with pytest.raises(LookupError):
         ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
+async def test_channel_add_current_saves_current_channel_id(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    channel_ctx = ctx.make("alice-id", "alice", channel_type="O")
+    channel_ctx = replace(channel_ctx, channel_id="current-channel-id")
+
+    reply = await dispatch(channel_ctx, "!channel add-current town")
+
+    assert reply is not None
+    assert "added" in reply.lower()
+    saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+    assert saved.channel_id == "current-channel-id"
+
+
+async def test_channel_add_current_saves_private_channel_id(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    channel_ctx = replace(
+        ctx.make("alice-id", "alice", channel_type="P"),
+        channel_id="private-channel-id",
+    )
+
+    reply = await dispatch(channel_ctx, "!channel add-current private")
+
+    assert reply is not None
+    assert "added" in reply.lower()
+    saved = ctx.user_channels.get_by_owner_and_alias("alice-id", "private")
+    assert saved.channel_id == "private-channel-id"
+
+
+@pytest.mark.parametrize("channel_type", ["D", "G", None])
+async def test_channel_add_current_rejects_non_channel_contexts(
+    ctx: CommandFixture,
+    channel_type: str | None,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    command_ctx = ctx.make("alice-id", "alice", channel_type=channel_type)
+
+    reply = await dispatch(command_ctx, "!channel add-current town")
+
+    assert reply is not None
+    assert "Run this from the Mattermost channel" in reply
+    with pytest.raises(LookupError):
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
+async def test_channel_add_current_rejects_empty_current_channel_id(ctx: CommandFixture):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    channel_ctx = replace(ctx.make("alice-id", "alice", channel_type="O"), channel_id="")
+
+    reply = await dispatch(channel_ctx, "!channel add-current town")
+
+    assert reply is not None
+    assert "Run this from the Mattermost channel" in reply
+    with pytest.raises(LookupError):
+        ctx.user_channels.get_by_owner_and_alias("alice-id", "town")
+
+
+async def test_channel_add_current_rejects_dm_duplicate_and_unapproved_user(
+    ctx: CommandFixture,
+):
+    pending = await dispatch(
+        ctx.make("alice-id", "alice", channel_type="O"),
+        "!channel add-current town",
+    )
+    assert pending is not None
+    assert "register" in pending.lower()
+
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    dm_reply = await dispatch(ctx.make("alice-id", "alice"), "!channel add-current town")
+    assert dm_reply is not None
+    assert "channel" in dm_reply.lower()
+
+    channel_ctx = replace(
+        ctx.make("alice-id", "alice", channel_type="O"),
+        channel_id="current-channel-id",
+    )
+    await dispatch(channel_ctx, "!channel add-current town")
+    duplicate = await dispatch(channel_ctx, "!channel add-current town")
+    assert duplicate is not None
+    assert "already" in duplicate.lower()
 
 
 async def test_channel_aliases_are_owner_scoped(ctx: CommandFixture):
@@ -1473,6 +1753,25 @@ async def test_send_without_defaults_fails_safely(ctx: CommandFixture):
     assert ctx.audits.list_for_user("alice-id") == []
 
 
+async def test_send_missing_defaults_points_to_lists_and_default_setup(
+    ctx: CommandFixture,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="No default body",
+        message_sha256=hash_message("No default body"),
+    )
+
+    reply = await dispatch(ctx.make("alice-id", "alice"), f"!send {draft.id}")
+
+    assert reply is not None
+    assert "!bot list" in reply
+    assert "!channel list" in reply
+    assert "!default set --bot <alias> --channel <channel_alias>" in reply
+
+
 async def test_send_with_stale_defaults_fails_safely(ctx: CommandFixture):
     ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
     ctx.users.approve("alice-id", approved_by="admin-id")
@@ -1586,9 +1885,37 @@ async def test_send_rejects_foreign_draft(ctx: CommandFixture):
     assert reply is not None
     assert "draft" in reply.lower()
     assert "unavailable" in reply.lower() or "not found" in reply.lower()
+    assert "!draft list" in reply
     assert "do not leak" not in reply
     assert ctx.created_posts == []
     assert ctx.audits.list_for_user("alice-id") == []
+
+
+async def test_send_unknown_channel_points_to_channel_list_and_add_current(
+    ctx: CommandFixture,
+):
+    ctx.users.upsert_seen_user(user_id="alice-id", username="alice", is_admin=False)
+    ctx.users.approve("alice-id", approved_by="admin-id")
+    ctx.token_identities["secret-token"] = {
+        "id": "bot-id",
+        "username": "news-bot",
+        "is_bot": True,
+    }
+    await dispatch(ctx.make("alice-id", "alice"), "!bot add news secret-token")
+    draft = ctx.post_drafts.create(
+        owner_user_id="alice-id",
+        message="Missing channel body",
+        message_sha256=hash_message("Missing channel body"),
+    )
+
+    reply = await dispatch(
+        ctx.make("alice-id", "alice"),
+        f"!send {draft.id} --bot news --channel missing",
+    )
+
+    assert reply is not None
+    assert "!channel list" in reply
+    assert "@postbot !channel add-current <alias>" in reply
 
 
 async def test_send_records_failed_audit_on_unknown_channel_alias(ctx: CommandFixture):
@@ -1723,6 +2050,7 @@ async def test_send_rejects_deleted_and_sent_drafts(ctx: CommandFixture):
         )
         assert reply is not None
         assert "unavailable" in reply.lower() or "not found" in reply.lower()
+        assert "!draft list" in reply
         assert "body" not in reply
 
     assert ctx.created_posts == []

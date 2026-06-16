@@ -31,6 +31,33 @@ async def add(ctx: CommandContext, args: ParsedArgs) -> str:
     return ctx.t("channel.added", alias=channel.alias)
 
 
+async def add_current(ctx: CommandContext, args: ParsedArgs) -> str:
+    access_error = require_approved_user(ctx)
+    if access_error is not None:
+        return access_error
+
+    if ctx.channel_type not in {"O", "P"} or not ctx.channel_id:
+        return ctx.t("channel.add_current_channel_only")
+
+    if len(args.positional) != 1:
+        return ctx.t("channel.add_current_usage")
+
+    alias = args.positional[0]
+    try:
+        ctx.user_channel_repo.get_by_owner_and_alias(ctx.caller_user_id, alias)
+    except LookupError:
+        pass
+    else:
+        return ctx.t("channel.duplicate", alias=alias)
+
+    channel = ctx.user_channel_repo.add(
+        owner_user_id=ctx.caller_user_id,
+        alias=alias,
+        channel_id=ctx.channel_id,
+    )
+    return ctx.t("channel.add_current_added", alias=channel.alias)
+
+
 async def set_channel(ctx: CommandContext, args: ParsedArgs) -> str:
     access_error = _require_channel_command_access(ctx)
     if access_error is not None:

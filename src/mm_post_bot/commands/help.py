@@ -13,6 +13,8 @@ async def handle(ctx: CommandContext, args: ParsedArgs) -> str:
                 ctx.t("help.core.help"),
                 ctx.t("help.core.register"),
                 ctx.t("help.core.status"),
+                ctx.t("help.core.setup"),
+                ctx.t("help.core.next"),
                 ctx.t("help.core.lang"),
             ],
         )
@@ -75,6 +77,7 @@ def _approved_user_sections(ctx: CommandContext) -> list[str]:
             ctx.t("help.channels.title"),
             [
                 ctx.t("help.channels.add"),
+                ctx.t("help.channels.add_current"),
                 ctx.t("help.channels.set"),
                 ctx.t("help.channels.remove"),
                 ctx.t("help.channels.list"),

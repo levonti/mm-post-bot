@@ -38,6 +38,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.core.help": "!help - show available commands",
         "help.core.register": "!register - register for posting access",
         "help.core.status": "!status - show your registration status",
+        "help.core.setup": "!setup - show posting setup checklist",
+        "help.core.next": "!next - show the next recommended posting step",
         "help.core.lang": "!lang [en|ru] - show or change reply language",
         "help.admin_bootstrap.title": "Admin bootstrap",
         "help.admin_bootstrap.configured": "You are configured as an admin in MM_ADMINS.",
@@ -55,6 +57,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.posting_bots.remove": "!bot remove <alias> - remove a posting bot",
         "help.channels.title": "Channels",
         "help.channels.add": "!channel add <alias> <channel_id> - add a channel alias",
+        "help.channels.add_current": (
+            "@postbot !channel add-current <alias> - save the current channel as an alias"
+        ),
         "help.channels.set": "!channel set <alias> <channel_id> - update a channel alias",
         "help.channels.remove": "!channel remove <alias> - remove a channel alias",
         "help.channels.list": "!channel list - list your channel aliases",
@@ -98,6 +103,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "bot.not_found": "Could not find a bot named {alias}.",
         "bot.removed": "Removed bot {alias}.",
         "channel.add_usage": "Usage: !channel add <alias> <channel_id>",
+        "channel.add_current_usage": "Usage: !channel add-current <alias>",
+        "channel.add_current_channel_only": (
+            "Run this from the Mattermost channel you want to save, for example: "
+            "@postbot !channel add-current town"
+        ),
         "channel.set_usage": "Usage: !channel set <alias> <channel_id>",
         "channel.remove_usage": "Usage: !channel remove <alias>",
         "channel.list_usage": "Usage: !channel list",
@@ -106,6 +116,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "You already have a channel named {alias}. Use !channel set {alias} <channel_id>."
         ),
         "channel.added": "Added channel {alias}.",
+        "channel.add_current_added": "Added current channel as {alias}.",
         "channel.updated": "Updated channel {alias}.",
         "channel.removed": "Removed channel {alias}.",
         "channel.not_found": "Could not find a channel named {alias}.",
@@ -129,9 +140,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "default.bot_not_found": "Could not find a bot named {alias}.",
         "default.channel_not_found": "Could not find a channel named {alias}.",
         "default.stale": (
-            "Default target is incomplete because its bot or channel was removed. "
-            "Set it again with:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Default target is incomplete because its bot or channel was removed.\n"
+            "Check aliases: !bot list and !channel list\n"
+            "Set it again: !default set --bot <alias> --channel <channel_alias>\n"
+            "Or clear it: !default clear"
         ),
         "draft.start_usage": "Usage: !draft",
         "draft.started": "Draft capture started. Please send the post body in this direct message.",
@@ -145,27 +157,67 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.show": "Draft #{draft_id}:\n{message}",
         "draft.deleted": "Draft #{draft_id} deleted.",
         "draft.dm_only": "Please use draft commands in a direct message.",
+        "draft.saved_header": "Draft #{draft_id} saved.",
         "draft.saved": (
             "Draft #{draft_id} saved. Send it with:\n"
             "!send {draft_id}\n"
             "Or choose target explicitly:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
+        "posting_state.preview": "Preview: {preview}",
+        "posting_state.target.ready": (
+            "Target: bot {bot_alias} ({bot_username}), channel {channel_alias} ({channel_id})"
+        ),
+        "posting_state.target.missing": "Target: no default bot/channel configured.",
+        "posting_state.target.stale": (
+            "Target: default bot/channel is incomplete because one was removed."
+        ),
+        "posting_state.publish.short": "Publish: !send {draft_id}",
+        "posting_state.publish.explicit": (
+            "Publish: !send {draft_id} --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.default_recovery": (
+            "Set a default with: !default set --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.delete_hint": "Delete: !draft delete {draft_id}",
+        "posting_state.review_hint": "Review: !draft show {draft_id}",
+        "setup.usage": "Usage: !setup",
+        "next.usage": "Usage: !next",
+        "setup.dm_only": "Please use setup commands in a direct message.",
+        "setup.registration": "Registration: {status}",
+        "setup.bots": "Posting bots: {count}",
+        "setup.channels": "Channels: {count}",
+        "setup.default": "Default: {value}",
+        "setup.drafts": "Drafts: {count}",
+        "setup.next": "Next: {command}",
+        "next.context.register": "Register first so an admin can approve posting access.",
+        "next.context.status": "Check your access status before continuing.",
+        "next.context.bot": "Add a posting bot alias before you can publish.",
+        "next.context.channel": "Add a channel alias so posts have a destination.",
+        "next.context.default": "Set a default target to enable the short send command.",
+        "next.context.draft": "Start draft capture when you are ready to write the post.",
+        "next.context.draft_list": "Review saved drafts before publishing or deleting them.",
         "send.usage": "Usage: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
-            "No default bot/channel configured. Set one with:\n"
-            "!default set --bot <alias> --channel <channel_alias>\n"
-            "Or send explicitly with:\n"
+            "No default bot/channel configured.\n"
+            "Check aliases: !bot list and !channel list\n"
+            "Set a default: !default set --bot <alias> --channel <channel_alias>\n"
+            "Or send explicitly: "
             "!send <draft_id> --bot <alias> --channel <channel_alias>"
         ),
         "send.default_stale": (
-            "Default target is incomplete because its bot or channel was removed. "
-            "Set it again with:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Default target is incomplete because its bot or channel was removed.\n"
+            "Check aliases: !bot list and !channel list\n"
+            "Set it again: !default set --bot <alias> --channel <channel_alias>\n"
+            "Or clear it: !default clear"
         ),
-        "send.draft_unavailable": "Draft not found or unavailable.",
-        "send.bot_not_found": "Could not find that bot.",
-        "send.channel_not_found": "Could not find that channel alias.",
+        "send.draft_unavailable": "Draft not found or unavailable. Check drafts: !draft list",
+        "send.bot_not_found": "Could not find that bot. Check aliases with: !bot list",
+        "send.channel_not_found": (
+            "Could not find that channel alias.\n"
+            "Check aliases: !channel list\n"
+            "From a channel, save it with: @postbot !channel add-current <alias>"
+        ),
         "send.storage_misconfigured": (
             "Bot token storage is misconfigured. Please contact an administrator."
         ),
@@ -227,6 +279,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.core.help": "!help - показать доступные команды",
         "help.core.register": "!register - запросить доступ к постингу",
         "help.core.status": "!status - показать статус регистрации",
+        "help.core.setup": "!setup - показать checklist настройки постинга",
+        "help.core.next": "!next - показать следующий рекомендуемый шаг",
         "help.core.lang": "!lang [en|ru] - показать или изменить язык ответов",
         "help.admin_bootstrap.title": "Старт администратора",
         "help.admin_bootstrap.configured": "Вы указаны как администратор в MM_ADMINS.",
@@ -244,6 +298,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "help.posting_bots.remove": "!bot remove <alias> - удалить posting-бота",
         "help.channels.title": "Каналы",
         "help.channels.add": "!channel add <alias> <channel_id> - добавить alias канала",
+        "help.channels.add_current": (
+            "@postbot !channel add-current <alias> - сохранить текущий канал как alias"
+        ),
         "help.channels.set": "!channel set <alias> <channel_id> - изменить alias канала",
         "help.channels.remove": "!channel remove <alias> - удалить alias канала",
         "help.channels.list": "!channel list - показать aliases каналов",
@@ -287,6 +344,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "bot.not_found": "Бот с именем {alias} не найден.",
         "bot.removed": "Bot {alias} удалён.",
         "channel.add_usage": "Использование: !channel add <alias> <channel_id>",
+        "channel.add_current_usage": "Использование: !channel add-current <alias>",
+        "channel.add_current_channel_only": (
+            "Выполните эту команду в нужном Mattermost-канале, например: "
+            "@postbot !channel add-current town"
+        ),
         "channel.set_usage": "Использование: !channel set <alias> <channel_id>",
         "channel.remove_usage": "Использование: !channel remove <alias>",
         "channel.list_usage": "Использование: !channel list",
@@ -295,6 +357,7 @@ CATALOG: dict[str, dict[str, str]] = {
             "У вас уже есть channel alias {alias}. Используйте !channel set {alias} <channel_id>."
         ),
         "channel.added": "Channel alias {alias} добавлен.",
+        "channel.add_current_added": "Текущий канал сохранён как {alias}.",
         "channel.updated": "Channel alias {alias} обновлён.",
         "channel.removed": "Channel alias {alias} удалён.",
         "channel.not_found": "Channel alias {alias} не найден.",
@@ -320,8 +383,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "default.bot_not_found": "Бот с именем {alias} не найден.",
         "default.channel_not_found": "Channel alias {alias} не найден.",
         "default.stale": (
-            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Цель по умолчанию неполная: bot или channel был удалён.\n"
+            "Проверить aliases: !bot list и !channel list\n"
+            "Задать заново: !default set --bot <alias> --channel <channel_alias>\n"
+            "Или очистить: !default clear"
         ),
         "draft.start_usage": "Использование: !draft",
         "draft.started": (
@@ -337,26 +402,69 @@ CATALOG: dict[str, dict[str, str]] = {
         "draft.show": "Черновик #{draft_id}:\n{message}",
         "draft.deleted": "Черновик #{draft_id} удалён.",
         "draft.dm_only": "Используйте команды черновиков только в direct message.",
+        "draft.saved_header": "Черновик #{draft_id} сохранён.",
         "draft.saved": (
             "Черновик #{draft_id} сохранён. Отправить его можно командой:\n"
             "!send {draft_id}\n"
             "Или выбрать цель явно:\n"
             "!send {draft_id} --bot <alias> --channel <channel_alias>"
         ),
+        "posting_state.preview": "Предпросмотр: {preview}",
+        "posting_state.target.ready": (
+            "Цель: bot {bot_alias} ({bot_username}), channel {channel_alias} ({channel_id})"
+        ),
+        "posting_state.target.missing": "Цель: bot/channel по умолчанию не настроены.",
+        "posting_state.target.stale": (
+            "Цель: bot/channel по умолчанию неполная, потому что один alias удалён."
+        ),
+        "posting_state.publish.short": "Опубликовать: !send {draft_id}",
+        "posting_state.publish.explicit": (
+            "Опубликовать: !send {draft_id} --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.default_recovery": (
+            "Задать цель по умолчанию: !default set --bot <alias> --channel <channel_alias>"
+        ),
+        "posting_state.delete_hint": "Удалить: !draft delete {draft_id}",
+        "posting_state.review_hint": "Проверить: !draft show {draft_id}",
+        "setup.usage": "Использование: !setup",
+        "next.usage": "Использование: !next",
+        "setup.dm_only": "Используйте команды настройки только в direct message.",
+        "setup.registration": "Регистрация: {status}",
+        "setup.bots": "Posting-боты: {count}",
+        "setup.channels": "Каналы: {count}",
+        "setup.default": "По умолчанию: {value}",
+        "setup.drafts": "Черновики: {count}",
+        "setup.next": "Дальше: {command}",
+        "next.context.register": "Сначала зарегистрируйтесь, чтобы админ открыл доступ.",
+        "next.context.status": "Проверьте статус доступа перед продолжением.",
+        "next.context.bot": "Добавьте bot alias, чтобы потом публиковать посты.",
+        "next.context.channel": "Добавьте channel alias, чтобы постам было куда отправляться.",
+        "next.context.default": "Задайте цель по умолчанию для короткой команды отправки.",
+        "next.context.draft": "Начните черновик, когда будете готовы написать пост.",
+        "next.context.draft_list": (
+            "Проверьте сохранённые черновики перед публикацией или удалением."
+        ),
         "send.usage": "Использование: !send <draft_id> [--bot <alias>] [--channel <channel_alias>]",
         "send.defaults_missing": (
-            "Bot/channel по умолчанию не настроены. Задайте их командой:\n"
-            "!default set --bot <alias> --channel <channel_alias>\n"
-            "Или отправьте явно:\n"
+            "Bot/channel по умолчанию не настроены.\n"
+            "Проверить aliases: !bot list и !channel list\n"
+            "Задать цель: !default set --bot <alias> --channel <channel_alias>\n"
+            "Или отправить явно: "
             "!send <draft_id> --bot <alias> --channel <channel_alias>"
         ),
         "send.default_stale": (
-            "Цель по умолчанию неполная: bot или channel был удалён. Задайте её заново:\n"
-            "!default set --bot <alias> --channel <channel_alias>"
+            "Цель по умолчанию неполная: bot или channel был удалён.\n"
+            "Проверить aliases: !bot list и !channel list\n"
+            "Задать заново: !default set --bot <alias> --channel <channel_alias>\n"
+            "Или очистить: !default clear"
         ),
-        "send.draft_unavailable": "Черновик не найден или недоступен.",
-        "send.bot_not_found": "Указанный бот не найден.",
-        "send.channel_not_found": "Указанный channel alias не найден.",
+        "send.draft_unavailable": "Черновик не найден или недоступен. Проверьте: !draft list",
+        "send.bot_not_found": "Указанный бот не найден. Проверить aliases: !bot list",
+        "send.channel_not_found": (
+            "Указанный channel alias не найден.\n"
+            "Проверить aliases: !channel list\n"
+            "Из канала можно сохранить alias: @postbot !channel add-current <alias>"
+        ),
         "send.storage_misconfigured": (
             "Хранилище bot token настроено неверно. Обратитесь к администратору."
         ),

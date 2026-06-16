@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
-from . import bot, channel, defaults, draft, lang, register, send, status, user_admin
+from . import bot, channel, defaults, draft, lang, register, send, setup, status, user_admin
 from . import help as help_cmd
 from .context import CommandContext
 from .parser import ParsedArgs, parse_command
@@ -13,11 +13,14 @@ REGISTRY: dict[tuple[str, ...], Handler] = {
     ("lang",): lang.handle,
     ("register",): register.handle,
     ("status",): status.handle,
+    ("setup",): setup.show,
+    ("next",): setup.next_action,
     ("send",): send.handle,
     ("bot", "add"): bot.add,
     ("bot", "list"): bot.list_bots,
     ("bot", "remove"): bot.remove,
     ("channel", "add"): channel.add,
+    ("channel", "add-current"): channel.add_current,
     ("channel", "set"): channel.set_channel,
     ("channel", "remove"): channel.remove,
     ("channel", "list"): channel.list_channels,

@@ -7,6 +7,13 @@ from typing import Any
 from . import commands
 from .commands.access import require_approved_user
 from .commands.context import CommandContext
+from .commands.posting_state import (
+    default_recovery,
+    preview_line,
+    publish_hint,
+    target_line,
+    target_state,
+)
 from .config import Settings
 from .db import DbConn
 from .i18n import FALLBACK_LOCALE, normalize_locale
@@ -133,7 +140,21 @@ async def handle_draft_body(ctx: CommandContext, body: str) -> str | None:
         message_sha256=hash_message(body),
     )
     ctx.draft_capture_repo.clear(ctx.caller_user_id)
-    return ctx.t("draft.saved", draft_id=draft.id)
+    state = target_state(ctx)
+    lines = [
+        ctx.t("draft.saved_header", draft_id=draft.id),
+        ctx.t("posting_state.preview", preview=preview_line(body)),
+        target_line(ctx, state),
+    ]
+    if state.status != "ready":
+        lines.append(default_recovery(ctx))
+    lines.extend(
+        [
+            publish_hint(ctx, draft.id, state),
+            ctx.t("posting_state.review_hint", draft_id=draft.id),
+        ]
+    )
+    return "\n".join(lines)
 
 
 async def handle_event(

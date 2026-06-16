@@ -105,10 +105,13 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 !lang ru
 !register
 !status
+!setup
+!next
 !bot add <alias> <token>
 !bot list
 !bot remove <alias>
 !channel add <alias> <channel_id>
+@postbot !channel add-current <alias>
 !channel set <alias> <channel_id>
 !channel remove <alias>
 !channel list
@@ -152,12 +155,19 @@ Compose поднимает сервис `mm-post-bot` и `postgres:15-alpine`. `
 
 Как работает draft-first flow:
 
-1. Отправьте `!draft` в DM manager-боту.
-2. Следующее обычное DM-сообщение сохранится как черновик.
-3. Проверьте черновик через `!draft list` или `!draft show <draft_id>`.
-4. Если defaults настроены, опубликуйте его через `!send <draft_id>`.
+1. Проверьте готовность настройки через `!setup`; бот покажет следующий шаг.
+2. В DM manager-боту отправьте `!draft`.
+3. Следующее обычное DM-сообщение сохранится как черновик и покажет preview, target и команды.
+4. Проверьте черновик через `!draft show <draft_id>`.
+5. Если defaults настроены, опубликуйте его через `!send <draft_id>`.
    Для разового выбора цели используйте
    `!send <draft_id> --bot <alias> --channel <channel_alias>`.
+
+Чтобы добавить канал без копирования Mattermost channel ID, выполните в нужном канале:
+
+```text
+@postbot !channel add-current <alias>
+```
 
 В каналах команды должны начинаться с упоминания manager-бота, например
 `@postbot !status`. В DM упоминание не нужно.
